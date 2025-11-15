@@ -1,0 +1,21 @@
+# Node modules
+frontend/node_modules/
+frontend/YoChat/node_modules/
+backend/node_modules/
+
+# Expo/React Native
+frontend/YoChat/.expo/
+android/
+ios/
+
+# Env files
+frontend/.env
+frontend/YoChat/.env
+frontend/YoChat/.gitignore
+backend/.env
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
