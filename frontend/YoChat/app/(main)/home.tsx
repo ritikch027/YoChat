@@ -106,7 +106,7 @@ const Home = () => {
           <TouchableOpacity
             activeOpacity={0.7}
             style={styles.settingIcon}
-            onPress={() => router.push("/(main)/profileModal")}
+            onPress={() => router.push("/(modals)/profileModal")}
           >
             <Icons.GearSixIcon
               color={colors.white}
@@ -194,7 +194,7 @@ const Home = () => {
         style={styles.floatingButton}
         onPress={() =>
           router.push({
-            pathname: "/(main)/NewConversationModal",
+            pathname: "/(modals)/NewConversationModal",
             params: { isGroup: selectedTab },
           })
         }
