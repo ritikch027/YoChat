@@ -1,6 +1,6 @@
 import User from "../models/User.js";
 import { generateToken } from "../utils/token.js";
-import { validateUsername } from "../utils/username.js";
+import validateUsername from "../utils/username.js";
 
 // GET /username/check?username=ritik
 export const checkUsername = async (req, res) => {
