@@ -7,6 +7,7 @@ export const generateToken = (user) => {
       name: user.name,
       email: user.email,
       avatar: user.avatar,
+      username: user.username || null,
     },
   };
 

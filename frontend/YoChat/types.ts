@@ -23,12 +23,14 @@ export interface UserProps {
   name: string;
   avatar?: string | null;
   id?: string;
+  username?: string | null;
   // Add any additional fields from the token payload as needed
 }
 export interface UserDataProps {
   name: string;
   email: string;
   avatar?: any;
+  username?: string;
 }
 
 export interface InputProps extends TextInputProps {

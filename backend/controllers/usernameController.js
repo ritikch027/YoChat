@@ -1,5 +1,6 @@
 import User from "../models/User.js";
-import  validateUsername  from "../utils/username.js";
+import { generateToken } from "../utils/token.js";
+import { validateUsername } from "../utils/username.js";
 
 // GET /username/check?username=ritik
 export const checkUsername = async (req, res) => {
@@ -33,7 +34,7 @@ export const checkUsername = async (req, res) => {
 // PATCH /me/username  (Auth required)
 export const updateMyUsername = async (req, res) => {
   try {
-    const userId = req.user.id; // from your auth middleware (JWT)
+    const userId = req.user._id; // from your auth middleware (JWT)
     const raw = (req.body.username || "").trim();
 
     // allow removing username
@@ -78,9 +79,13 @@ export const updateMyUsername = async (req, res) => {
       { new: true }
     ).select("-password");
 
+    // 🔥 generate a fresh token with updated username
+    const token = generateToken(updated);
+
     return res.json({
       success: true,
       user: updated,
+      token, // 👈 send new token to frontend
     });
   } catch (err) {
     console.error("updateMyUsername error", err);

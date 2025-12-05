@@ -1,6 +1,7 @@
 import {
   Alert,
   Platform,
+  Pressable,
   ScrollView,
   StyleSheet,
   Text,
@@ -31,11 +32,11 @@ const ProfileModal = () => {
     name: "",
     email: "",
     avatar: null,
+    username: "",
   });
   const [loading, setLoading] = useState(false);
   const [image, setImage] = useState<string | null>(null);
   const router = useRouter();
-
   useEffect(() => {
     updateProfile(processUpdateProfile);
 
@@ -181,6 +182,28 @@ const ProfileModal = () => {
                 // editable={false}
               />
             </View>
+            {/* <View style={styles.inputContainer}>
+              <Typo style={{ paddingLeft: spacingX._10 }}>Username</Typo>
+
+              <Input
+                value={userData.username}
+                containerStyle={{
+                  borderColor: colors.neutral350,
+                  paddingLeft: spacingX._20,
+                }}
+                onChangeText={(value) =>
+                  setUserData({ ...userData, username: value })
+                }
+                editable={true}
+              />
+            </View> */}
+            <Pressable
+              onPress={() => router.push("../(main)/username")}
+              style={{ paddingVertical: 12 }}
+            >
+              <Text>Username</Text>
+              {user?.username && <Text>@{user.username}</Text>}
+            </Pressable>
           </View>
         </ScrollView>
       </View>
