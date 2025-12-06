@@ -53,6 +53,7 @@ export default function UsernameScreen() {
         }
       } catch (err) {
         setStatus("idle");
+        console.log(err);
         setMessage("Error checking username.");
       }
     }, DEBOUNCE_MS);

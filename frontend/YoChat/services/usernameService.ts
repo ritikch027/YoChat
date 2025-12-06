@@ -10,7 +10,7 @@ export type CheckUsernameResponse = {
 export const checkUsername = async (
   username: string
 ): Promise<CheckUsernameResponse> => {
-  const res = await axios.get(`${API_URL}/username/check`, {
+  const res = await axios.get(`${API_URL}/api/username/check`, {
     params: { username },
   });
   return res.data;
@@ -26,7 +26,7 @@ export const updateMyUsername = async (
   token?: string;
 }> => {
   const res = await axios.patch(
-    `${API_URL}/me/username`,
+    `${API_URL}/api/me/username`,
     { username: username ?? "" },
     {
       headers: {
