@@ -29,6 +29,7 @@ const UserSchema = new Schema(
 );
 
 UserSchema.index({ usernameSearch: 1 }, { unique: true, sparse: true });
+UserSchema.index({ name: 1 });
 const User = model("User", UserSchema);
 
 export default User;

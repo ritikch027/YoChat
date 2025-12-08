@@ -121,7 +121,6 @@ export const getUserByUsername = async (req, res) => {
 export const searchUsers = async (req, res) => {
   try {
     let q = (req.query.q || "").trim();
-
     if (!q) {
       return res.json({ users: [] });
     }

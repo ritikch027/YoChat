@@ -37,7 +37,6 @@ export const updateMyUsername = async (
   return res.data;
 };
 
-
 export interface UserSearchResult {
   _id: string;
   name: string;
@@ -49,12 +48,13 @@ export const searchUsers = async (
   token: string,
   q: string
 ): Promise<UserSearchResult[]> => {
-  const res = await axios.get(`${API_URL}/users/search`, {
+  const res = await axios.get(`${API_URL}/api/users/search`, {
     params: { q },
     headers: {
       Authorization: `Bearer ${token}`,
     },
   });
 
+  console.log("data:", res.data.users);
   return res.data.users as UserSearchResult[];
 };
