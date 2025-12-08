@@ -115,3 +115,47 @@ export const getUserByUsername = async (req, res) => {
     res.status(500).json({ error: "SERVER_ERROR" });
   }
 };
+
+
+// GET /users/search?q=rit
+export const searchUsers = async (req, res) => {
+  try {
+    let q = (req.query.q || "").trim();
+
+    if (!q) {
+      return res.json({ users: [] });
+    }
+
+    // support "@ritik" as well as "ritik"
+    if (q.startsWith("@")) q = q.slice(1);
+
+    const normalized = q.toLowerCase();
+
+    // usernameSearch: starts with query
+    const usernameRegex = new RegExp("^" + normalized);
+
+    // name: contains query anywhere, case-insensitive
+    const nameRegex = new RegExp(normalized, "i");
+
+    const filter = {
+      $or: [
+        { usernameSearch: { $regex: usernameRegex } },
+        { name: { $regex: nameRegex } },
+      ],
+    };
+
+    // Optionally exclude current user from search results (if auth is used)
+    if (req.user?._id) {
+      filter._id = { $ne: req.user._id };
+    }
+
+    const users = await User.find(filter)
+      .select("_id name username avatar")
+      .limit(20);
+
+    return res.json({ users });
+  } catch (err) {
+    console.error("searchUsers error", err);
+    res.status(500).json({ error: "SERVER_ERROR" });
+  }
+};

@@ -1,8 +1,10 @@
 import {
+  ActivityIndicator,
   Alert,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -21,6 +23,7 @@ import Button from "@/components/Button";
 import { verticalScale } from "@/utils/styling";
 import { getContacts, newConversation } from "@/socket/socketEvents";
 import { uploadFileToCloudinary } from "@/services/imageService";
+import { searchUsers } from "@/services/usernameService";
 const NewConversationModal = () => {
   const { isGroup } = useLocalSearchParams();
   const isGroupMode = isGroup == "1";
@@ -28,11 +31,14 @@ const NewConversationModal = () => {
   const [groupAvatar, setGroupAvatar] = useState<{ uri: string } | null>(null);
   const [groupName, setGroupName] = useState("");
   const [contacts, setContacts] = useState([]);
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<any[]>([]);
+  const [searchLoading, setSearchLoading] = useState(false);
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>(
     []
   );
   const [isLoading, setIsLoading] = useState(false);
-  const { user: currentUser } = useAuth();
+  const { user: currentUser, token } = useAuth();
 
   useEffect(() => {
     getContacts(processGetContacts);
@@ -140,6 +146,43 @@ const NewConversationModal = () => {
     }
   };
 
+  useEffect(() => {
+    if (!token) return;
+
+    const trimmed = query.trim();
+    if (!trimmed) {
+      setSearchResults([]);
+      setSearchLoading(false);
+      return;
+    }
+
+    setSearchLoading(true);
+
+    const id = setTimeout(async () => {
+      try {
+        const users = await searchUsers(token, trimmed);
+
+        // Normalize to match your contacts shape
+        const normalized = users.map((u) => ({
+          id: u._id,
+          name: u.name,
+          avatar: u.avatar,
+          username: u.username,
+        }));
+
+        setSearchResults(normalized);
+      } catch (err: any) {
+        console.log("searchUsers error:", err?.response?.data || err.message);
+      } finally {
+        setSearchLoading(false);
+      }
+    }, 400);
+
+    return () => clearTimeout(id);
+  }, [query, token]);
+
+  const data = query.trim() ? searchResults : contacts;
+
   return (
     <ScreenWrapper isModal={true}>
       <View style={styles.container}>
@@ -147,6 +190,32 @@ const NewConversationModal = () => {
           title={isGroupMode ? "New Group" : "Select User"}
           leftIcon={<BackButton color={colors.black} />}
         />
+        <TextInput
+          placeholder="Search by username or name (e.g. @ritik)"
+          value={query}
+          onChangeText={setQuery}
+          autoCapitalize="none"
+          style={{
+            borderWidth: 1,
+            borderRadius: 10,
+            paddingHorizontal: 12,
+            paddingVertical: 8,
+            marginBottom: 12,
+          }}
+        />
+
+        {searchLoading && (
+          <View
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              marginBottom: 8,
+            }}
+          >
+            <ActivityIndicator />
+            <Text style={{ marginLeft: 8 }}>Searching…</Text>
+          </View>
+        )}
 
         {isGroupMode && (
           <View style={styles.groupInfoIndicator}>
@@ -182,7 +251,7 @@ const NewConversationModal = () => {
             },
           ]}
         >
-          {contacts.map((user: any, index) => {
+          {data.map((user: any, index) => {
             const isSelected = selectedParticipants.includes(user.id);
             return (
               <TouchableOpacity
