@@ -116,41 +116,48 @@ export const getUserByUsername = async (req, res) => {
   }
 };
 
-
 // GET /users/search?q=rit
 export const searchUsers = async (req, res) => {
   try {
     let q = (req.query.q || "").trim();
+
     if (!q) {
       return res.json({ users: [] });
     }
 
-    // support "@ritik" as well as "ritik"
-    if (q.startsWith("@")) q = q.slice(1);
+    // support "@ritik"
+    const startsWithAt = q.startsWith("@");
+    if (startsWithAt) q = q.slice(1);
 
     const normalized = q.toLowerCase();
 
-    // usernameSearch: starts with query
+    // username prefix regex (index-friendly)
     const usernameRegex = new RegExp("^" + normalized);
 
-    // name: contains query anywhere, case-insensitive
-    const nameRegex = new RegExp(normalized, "i");
+    let users;
 
-    const filter = {
-      $or: [
-        { usernameSearch: { $regex: usernameRegex } },
-        { name: { $regex: nameRegex } },
-      ],
-    };
+    if (startsWithAt) {
+      // 🔹 If user typed "@..." → search usernames only (faster)
+      users = await User.find({
+        usernameSearch: { $regex: usernameRegex },
+      })
+        .select("_id name username avatar")
+        .limit(20)
+        .lean();
+    } else {
+      // 🔹 Otherwise, search username prefix + name contains
+      const nameRegex = new RegExp(normalized, "i");
 
-    // Optionally exclude current user from search results (if auth is used)
-    if (req.user?._id) {
-      filter._id = { $ne: req.user._id };
+      users = await User.find({
+        $or: [
+          { usernameSearch: { $regex: usernameRegex } },
+          { name: { $regex: nameRegex } },
+        ],
+      })
+        .select("_id name username avatar")
+        .limit(20)
+        .lean();
     }
-
-    const users = await User.find(filter)
-      .select("_id name username avatar")
-      .limit(20);
 
     return res.json({ users });
   } catch (err) {
