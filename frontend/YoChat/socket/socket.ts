@@ -16,12 +16,32 @@ export async function connectSocket(): Promise<Socket> {
       auth: { token },
     });
 
-    // wait for connection
-    await new Promise((resolve) => {
-      socket?.on("connect", () => {
+    // Wait for connection (or fail fast).
+    await new Promise<void>((resolve, reject) => {
+      const timeout = setTimeout(() => {
+        cleanup();
+        reject(new Error("Socket connection timed out"));
+      }, 8000);
+
+      const onConnect = () => {
         console.log("Socket connected: ", socket?.id);
-        resolve(true);
-      });
+        cleanup();
+        resolve();
+      };
+
+      const onError = (err: any) => {
+        cleanup();
+        reject(err instanceof Error ? err : new Error(String(err?.message || err)));
+      };
+
+      const cleanup = () => {
+        clearTimeout(timeout);
+        socket?.off("connect", onConnect);
+        socket?.off("connect_error", onError);
+      };
+
+      socket?.once("connect", onConnect);
+      socket?.once("connect_error", onError);
     });
 
     socket.on("disconnect", () => {

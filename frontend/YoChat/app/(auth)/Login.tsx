@@ -67,7 +67,7 @@ const Login = () => {
                   Welcome Back
                 </Typo>
                 <Typo color={colors.neutral600}>
-                  We're so excited to see you again!
+                  We{"'"}re so excited to see you again!
                 </Typo>
               </View>
 
@@ -117,7 +117,7 @@ const Login = () => {
                 </Button>
               </View>
               <View style={styles.footer}>
-                <Typo color={colors.neutral600}>Don't have an account?</Typo>
+                <Typo color={colors.neutral600}>Don{"'"}t have an account?</Typo>
                 <TouchableOpacity
                   onPress={() => router.replace("/(auth)/Register")}
                 >

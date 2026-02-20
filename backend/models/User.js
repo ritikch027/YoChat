@@ -24,6 +24,10 @@ const UserSchema = new Schema(
       unique: true, // Mongo index, but because of sparse it only applies if value exists
       sparse: true, // allow many users with null/undefined (no username)
     },
+    lastSeen: {
+      type: Date,
+      default: null,
+    },
   },
   { timestamps: true }
 );

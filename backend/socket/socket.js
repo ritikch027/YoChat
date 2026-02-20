@@ -4,6 +4,11 @@ import jwt from "jsonwebtoken";
 import { registerUserEvents } from "./userEvents.js";
 import Conversation from "../models/Conversation.js";
 import { registerChatEvents } from "./chatEvents.js";
+import {
+  getOnlineUserIds,
+  noteUserConnected,
+  noteUserDisconnected,
+} from "./presenceStore.js";
 
 dotenv.config();
 
@@ -41,6 +46,20 @@ export function initializeSocket(server) {
 
     console.log(`user connected: ${userId},username:${socket.data.name}`);
 
+    // Presence: increment connection count and broadcast online.
+    const presence = noteUserConnected(userId);
+    socket.emit("presenceInit", { onlineUserIds: getOnlineUserIds() });
+    io.emit("presenceUpdate", {
+      userId: String(userId),
+      online: presence.online,
+      lastSeen: presence.lastSeen,
+    });
+
+    // Allow clients to request a fresh presence snapshot (screens may mount later).
+    socket.on("presenceGet", () => {
+      socket.emit("presenceInit", { onlineUserIds: getOnlineUserIds() });
+    });
+
     registerUserEvents(io, socket);
     registerChatEvents(io, socket);
 
@@ -59,6 +78,15 @@ export function initializeSocket(server) {
 
     socket.on("disconnect", () => {
       console.log(`user disconnected: ${userId}`);
+      noteUserDisconnected(userId)
+        .then((p) => {
+          io.emit("presenceUpdate", {
+            userId: String(userId),
+            online: p.online,
+            lastSeen: p.lastSeen,
+          });
+        })
+        .catch(() => {});
     });
   });
 

@@ -21,9 +21,16 @@ import Typo from "@/components/Typo";
 import { useAuth } from "@/contexts/authContext";
 import Button from "@/components/Button";
 import { verticalScale } from "@/utils/styling";
-import { getContacts, newConversation } from "@/socket/socketEvents";
+import {
+  getContacts,
+  newConversation,
+  presenceGet,
+  presenceInit,
+  presenceUpdate,
+} from "@/socket/socketEvents";
 import { uploadFileToCloudinary } from "@/services/imageService";
 import { searchUsers } from "@/services/usernameService";
+import moment from "moment";
 const NewConversationModal = () => {
   const { isGroup } = useLocalSearchParams();
   const isGroupMode = isGroup == "1";
@@ -38,15 +45,23 @@ const NewConversationModal = () => {
     []
   );
   const [isLoading, setIsLoading] = useState(false);
+  const [presence, setPresence] = useState<
+    Record<string, { online: boolean; lastSeen?: string | null }>
+  >({});
   const { user: currentUser, token } = useAuth();
 
   useEffect(() => {
     getContacts(processGetContacts);
     newConversation(processNewConversation);
+    presenceInit(processPresenceInit);
+    presenceUpdate(processPresenceUpdate);
+    presenceGet();
     getContacts(null);
     return () => {
       getContacts(processGetContacts, true);
       newConversation(processNewConversation, true);
+      presenceInit(processPresenceInit, true);
+      presenceUpdate(processPresenceUpdate, true);
     };
   }, []);
 
@@ -75,6 +90,29 @@ const NewConversationModal = () => {
       console.log("Error fetching/creating conversation: ", res.msg);
       Alert.alert("Error", res.msg);
     }
+  };
+
+  const processPresenceInit = (res: any) => {
+    const onlineUserIds: string[] = res?.onlineUserIds || [];
+    setPresence((prev) => {
+      const next = { ...prev };
+      onlineUserIds.forEach((id) => {
+        next[String(id)] = { ...(next[String(id)] || {}), online: true };
+      });
+      return next;
+    });
+  };
+
+  const processPresenceUpdate = (res: any) => {
+    const userId = String(res?.userId || "");
+    if (!userId) return;
+    setPresence((prev) => ({
+      ...prev,
+      [userId]: {
+        online: !!res?.online,
+        lastSeen: res?.lastSeen || prev[userId]?.lastSeen || null,
+      },
+    }));
   };
   const toggleParticipant = (user: any) => {
     setSelectedParticipants((prev: any) => {
@@ -106,23 +144,21 @@ const NewConversationModal = () => {
 
     setIsLoading(true);
     try {
-      let avatar = null;
+      let avatar: any = null;
       if (groupAvatar) {
         const uploadResult = await uploadFileToCloudinary(
           groupAvatar,
           "group-avatar"
         );
-        if (uploadResult.success) {
-          avatar = uploadResult.data;
-        }
-
-        newConversation({
-          type: "group",
-          participants: [currentUser.id, ...selectedParticipants],
-          name: groupName,
-          avatar,
-        });
+        if (uploadResult.success) avatar = uploadResult.data;
       }
+
+      newConversation({
+        type: "group",
+        participants: [currentUser.id, ...selectedParticipants],
+        name: groupName,
+        avatar,
+      });
     } catch (error: any) {
       console.log("Error creating group: ", error);
       Alert.alert("Error", error.message);
@@ -168,6 +204,8 @@ const NewConversationModal = () => {
           name: u.name,
           avatar: u.avatar,
           username: u.username,
+          online: u.online,
+          lastSeen: u.lastSeen,
         }));
 
         setSearchResults(normalized);
@@ -182,6 +220,14 @@ const NewConversationModal = () => {
   }, [query, token]);
 
   const data = query.trim() ? searchResults : contacts;
+
+  const getUserPresence = (user: any) => {
+    const id = String(user?.id || "");
+    const live = id ? presence[id] : undefined;
+    const online = live?.online ?? !!user?.online;
+    const lastSeen = live?.lastSeen ?? user?.lastSeen ?? null;
+    return { online, lastSeen };
+  };
 
   return (
     <ScreenWrapper isModal={true}>
@@ -253,6 +299,12 @@ const NewConversationModal = () => {
         >
           {data.map((user: any, index) => {
             const isSelected = selectedParticipants.includes(user.id);
+            const p = getUserPresence(user);
+            const statusText = p.online
+              ? "Online"
+              : p.lastSeen
+                ? `Last seen ${moment(p.lastSeen).fromNow()}`
+                : "Offline";
             return (
               <TouchableOpacity
                 activeOpacity={0.7}
@@ -261,7 +313,23 @@ const NewConversationModal = () => {
                 onPress={() => onSelectUser(user)}
               >
                 <Avatar size={45} uri={user.avatar} />
-                <Typo fontWeight={500}>{user.name}</Typo>
+                <View style={{ flex: 1 }}>
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    <View
+                      style={{
+                        width: 10,
+                        height: 10,
+                        borderRadius: 10,
+                        backgroundColor: p.online ? colors.green : colors.neutral400,
+                      }}
+                    />
+                    <Typo fontWeight={"600"}>{user.name}</Typo>
+                  </View>
+                  <Typo size={13} color={colors.neutral600}>
+                    {user?.username ? `@${user.username}  ` : ""}
+                    {statusText}
+                  </Typo>
+                </View>
                 {isGroupMode && (
                   <View style={styles.selectionIndicator}>
                     <View

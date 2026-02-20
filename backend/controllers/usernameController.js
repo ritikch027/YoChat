@@ -1,6 +1,11 @@
 import User from "../models/User.js";
 import { generateToken } from "../utils/token.js";
 import validateUsername from "../utils/username.js";
+import { getPresence } from "../socket/presenceStore.js";
+
+function escapeRegex(input) {
+  return String(input).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 // GET /username/check?username=ritik
 export const checkUsername = async (req, res) => {
@@ -102,14 +107,21 @@ export const getUserByUsername = async (req, res) => {
     const usernameSearch = raw.toLowerCase();
 
     const user = await User.findOne({ usernameSearch }).select(
-      "_id name username avatar" // adapt to your fields
+      "_id name username avatar lastSeen"
     );
 
     if (!user) {
       return res.status(404).json({ error: "NOT_FOUND" });
     }
 
-    res.json({ user });
+    const presence = getPresence(user._id);
+    res.json({
+      user: {
+        ...user.toObject(),
+        online: presence.online,
+        lastSeen: presence.lastSeen || user.lastSeen || null,
+      },
+    });
   } catch (err) {
     console.error("getUserByUsername error", err);
     res.status(500).json({ error: "SERVER_ERROR" });
@@ -132,7 +144,7 @@ export const searchUsers = async (req, res) => {
     const normalized = q.toLowerCase();
 
     // username prefix regex (index-friendly)
-    const usernameRegex = new RegExp("^" + normalized);
+    const usernameRegex = new RegExp("^" + escapeRegex(normalized));
 
     let users;
 
@@ -141,12 +153,12 @@ export const searchUsers = async (req, res) => {
       users = await User.find({
         usernameSearch: { $regex: usernameRegex },
       })
-        .select("_id name username avatar")
+        .select("_id name username avatar lastSeen")
         .limit(20)
         .lean();
     } else {
       // 🔹 Otherwise, search username prefix + name contains
-      const nameRegex = new RegExp(normalized, "i");
+      const nameRegex = new RegExp(escapeRegex(normalized), "i");
 
       users = await User.find({
         $or: [
@@ -154,12 +166,21 @@ export const searchUsers = async (req, res) => {
           { name: { $regex: nameRegex } },
         ],
       })
-        .select("_id name username avatar")
+        .select("_id name username avatar lastSeen")
         .limit(20)
         .lean();
     }
 
-    return res.json({ users });
+    const enriched = users.map((u) => {
+      const presence = getPresence(u._id);
+      return {
+        ...u,
+        online: presence.online,
+        lastSeen: presence.lastSeen || u.lastSeen || null,
+      };
+    });
+
+    return res.json({ users: enriched });
   } catch (err) {
     console.error("searchUsers error", err);
     res.status(500).json({ error: "SERVER_ERROR" });

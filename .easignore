@@ -1,0 +1,15 @@
+# ignore backend completely
+backend/
+
+# ignore root dependencies
+node_modules/
+
+# ignore logs & cache
+npm-debug.log
+yarn-error.log
+.expo/
+.expo-shared/
+
+# git junk
+.git/
+.gitignore

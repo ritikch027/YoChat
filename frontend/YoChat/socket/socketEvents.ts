@@ -120,3 +120,56 @@ export const getConversations = (payload: any, off: boolean = false) => {
     socket.emit("getConversations", payload); // sending payload as data
   }
 };
+
+export const presenceInit = (payload: any, off: boolean = false) => {
+  const socket = getSocket();
+  if (!socket) {
+    console.log("socket is not connected");
+    return;
+  }
+
+  if (off) {
+    socket.off("presenceInit", payload);
+  } else if (typeof payload == "function") {
+    socket.on("presenceInit", payload);
+  }
+};
+
+export const presenceUpdate = (payload: any, off: boolean = false) => {
+  const socket = getSocket();
+  if (!socket) {
+    console.log("socket is not connected");
+    return;
+  }
+
+  if (off) {
+    socket.off("presenceUpdate", payload);
+  } else if (typeof payload == "function") {
+    socket.on("presenceUpdate", payload);
+  }
+};
+
+export const presenceGet = () => {
+  const socket = getSocket();
+  if (!socket) {
+    console.log("socket is not connected");
+    return;
+  }
+  socket.emit("presenceGet");
+};
+
+export const typing = (payload: any, off: boolean = false) => {
+  const socket = getSocket();
+  if (!socket) {
+    console.log("socket is not connected");
+    return;
+  }
+
+  if (off) {
+    socket.off("typing", payload);
+  } else if (typeof payload == "function") {
+    socket.on("typing", payload);
+  } else {
+    socket.emit("typing", payload);
+  }
+};

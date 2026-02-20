@@ -42,6 +42,8 @@ export interface UserSearchResult {
   name: string;
   username?: string | null;
   avatar?: string | null;
+  online?: boolean;
+  lastSeen?: string | null;
 }
 
 export const searchUsers = async (

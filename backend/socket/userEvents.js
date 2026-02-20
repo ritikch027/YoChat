@@ -1,6 +1,7 @@
 import { Server as SocketIOServer } from "socket.io";
 import User from "../models/User.js";
 import { generateToken } from "../utils/token.js";
+import { getPresence } from "./presenceStore.js";
 
 export function registerUserEvents(io, socket) {
   socket.on("testSocket", (data) => {
@@ -35,6 +36,8 @@ export function registerUserEvents(io, socket) {
       //gen token with updated values
 
       const newToken = generateToken(updatedUser);
+      socket.data.name = updatedUser.name;
+      socket.data.avatar = updatedUser.avatar;
 
       socket.emit("updateProfile", {
         success: true,
@@ -68,12 +71,18 @@ export function registerUserEvents(io, socket) {
         { password: 0 } //exclude password field
       ).lean(); //will fetch js objects
 
-      const contacts = users.map((user) => ({
+      const contacts = users.map((user) => {
+        const presence = getPresence(user._id);
+        return {
         id: user._id.toString(),
         name: user.name,
         email: user.email,
+        username: user.username || null,
         avatar: user.avatar || "",
-      }));
+        online: presence.online,
+        lastSeen: presence.lastSeen || user.lastSeen || null,
+        };
+      });
 
       socket.emit("getContacts", {
         success: true,

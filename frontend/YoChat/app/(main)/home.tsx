@@ -37,17 +37,19 @@ const Home = () => {
     newConversation(NewConversationHandler);
     newMessage(newMessageHandler);
     // console.log("before calling");
+    setLoading(true);
     getConversations(null);
     return () => {
       getConversations(processConversations, true);
       newConversation(NewConversationHandler, true);
       newMessage(newMessageHandler, true);
     };
-  }, [conversations]);
+  }, []);
 
   const processConversations = (res: ResponseProps) => {
     // console.log("called");
     // console.log("got res ", res);
+    setLoading(false);
     if (res.success) {
       setConversations(res.data);
     }
@@ -173,14 +175,14 @@ const Home = () => {
                 selectedTab == 0 &&
                 directConversations.length == 0 && (
                   <Typo style={{ textAlign: "center" }}>
-                    You don't have any messages
+                    You don{"'"}t have any messages
                   </Typo>
                 )}
               {!loading &&
                 selectedTab == 1 &&
-                directConversations.length == 0 && (
+                groupConversations.length == 0 && (
                   <Typo style={{ textAlign: "center" }}>
-                    You haven't joined any groups yet!
+                    You haven{"'"}t joined any groups yet!
                   </Typo>
                 )}
 

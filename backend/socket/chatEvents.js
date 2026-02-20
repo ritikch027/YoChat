@@ -1,5 +1,19 @@
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
+
+async function requireConversationParticipant(conversationId, userId) {
+  const conversation = await Conversation.findById(conversationId).select(
+    "_id participants"
+  );
+  if (!conversation) return { ok: false, error: "CONVERSATION_NOT_FOUND" };
+
+  const isParticipant = conversation.participants.some(
+    (p) => p.toString() === String(userId)
+  );
+  if (!isParticipant) return { ok: false, error: "FORBIDDEN" };
+
+  return { ok: true, conversation };
+}
 export function registerChatEvents(io, socket) {
   socket.on("getConversations", async () => {
     console.log("getConversations event");
@@ -7,7 +21,7 @@ export function registerChatEvents(io, socket) {
     try {
       const userId = socket.data.userId;
       if (!userId) {
-        socket.emit("getConersations", {
+        socket.emit("getConversations", {
           success: false,
           msg: "Unauthorized",
         });
@@ -36,9 +50,9 @@ export function registerChatEvents(io, socket) {
       });
     } catch (error) {
       console.log("getConversation error: ", error);
-      socket.emit("getConversation", {
+      socket.emit("getConversations", {
         success: false,
-        message: "Failed to get conversation",
+        msg: "Failed to get conversation",
       });
     }
   });
@@ -47,10 +61,35 @@ export function registerChatEvents(io, socket) {
     console.log("newConversation event: ", data);
 
     try {
+      const userId = socket.data.userId;
+      if (!userId) {
+        socket.emit("newConversation", {
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      const rawParticipants = Array.isArray(data?.participants)
+        ? data.participants.map(String)
+        : [];
+      const participants = Array.from(new Set(rawParticipants));
+
+      // Enforce that creator is always a participant.
+      if (!participants.includes(String(userId))) participants.push(String(userId));
+
       if (data.type == "direct") {
+        if (participants.length !== 2) {
+          socket.emit("newConversation", {
+            success: false,
+            message: "Direct conversation must have exactly 2 participants",
+          });
+          return;
+        }
+
         const existingConversation = await Conversation.findOne({
           type: "direct",
-          participants: { $all: data.participants, $size: 2 },
+          participants: { $all: participants, $size: 2 },
         })
           .populate({
             path: "participants",
@@ -69,15 +108,15 @@ export function registerChatEvents(io, socket) {
       // create new conversations
       const conversation = await Conversation.create({
         type: data.type,
-        participants: data.participants,
+        participants,
         name: data.name || "",
         avatar: data.avatar || "",
-        createdBy: socket.data.userId,
+        createdBy: userId,
       });
       // get all the online users
 
       const connectedSockets = Array.from(io.sockets.sockets.values()).filter(
-        (s) => data.participants.includes(s.data.userId)
+        (s) => participants.includes(String(s.data.userId))
       );
 
       //join this conversation by all online participants
@@ -119,32 +158,60 @@ export function registerChatEvents(io, socket) {
   socket.on("newMessage", async (data) => {
     console.log("newMessage event: ", data);
     try {
+      const userId = socket.data.userId;
+      if (!userId) {
+        socket.emit("newMessage", {
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      const conversationId = data?.conversationId;
+      if (!conversationId) {
+        socket.emit("newMessage", {
+          success: false,
+          message: "Missing conversationId",
+        });
+        return;
+      }
+
+      const membership = await requireConversationParticipant(conversationId, userId);
+      if (!membership.ok) {
+        socket.emit("newMessage", {
+          success: false,
+          message: membership.error,
+        });
+        return;
+      }
+
       const message = await Message.create({
-        conversationId: data.conversationId,
-        senderId: data.sender.id,
-        content: data.content,
-        attachment: data.attachment,
+        conversationId,
+        senderId: userId,
+        content: (data?.content || "").toString(),
+        attachment: data?.attachment ? String(data.attachment) : "",
       });
-      io.to(data.conversationId).emit("newMessage", {
+      io.to(String(conversationId)).emit("newMessage", {
         success: true,
         data: {
           id: message._id,
-          content: data.content,
+          content: message.content,
           sender: {
-            id: data.sender.id,
-            name: data.sender.name,
-            avatar: data.sender.avatar,
+            id: String(userId),
+            name: socket.data.name,
+            avatar: socket.data.avatar,
           },
-          attachment: data.attachment,
-          createdAt: new Date().toISOString(),
-          conversationId: data.conversationId,
+          attachment: message.attachment || null,
+          createdAt: message.createdAt?.toISOString?.() || new Date().toISOString(),
+          conversationId: String(conversationId),
         },
       });
 
       // update conversation's last message
       console.log("updating last message");
-      await Conversation.findByIdAndUpdate(data.conversationId, {
+      await Conversation.findByIdAndUpdate(conversationId, {
         lastMessage: message._id,
+        updatedAt: new Date(),
       });
     } catch (error) {
       console.log("newMessage error: ", error);
@@ -154,11 +221,61 @@ export function registerChatEvents(io, socket) {
       });
     }
   });
+
+  socket.on("typing", async (data) => {
+    try {
+      const userId = socket.data.userId;
+      if (!userId) return;
+
+      const conversationId = data?.conversationId;
+      if (!conversationId) return;
+
+      const membership = await requireConversationParticipant(conversationId, userId);
+      if (!membership.ok) return;
+
+      const isTyping = !!data?.isTyping;
+      socket.to(String(conversationId)).emit("typing", {
+        conversationId: String(conversationId),
+        user: { id: String(userId), name: socket.data.name },
+        isTyping,
+        at: new Date().toISOString(),
+      });
+    } catch (e) {
+      // ignore
+    }
+  });
   socket.on("getMessages", async (data) => {
     console.log("getMessages event: ", data);
     try {
+      const userId = socket.data.userId;
+      if (!userId) {
+        socket.emit("getMessages", {
+          success: false,
+          message: "Unauthorized",
+        });
+        return;
+      }
+
+      const conversationId = data?.conversationId;
+      if (!conversationId) {
+        socket.emit("getMessages", {
+          success: false,
+          message: "Missing conversationId",
+        });
+        return;
+      }
+
+      const membership = await requireConversationParticipant(conversationId, userId);
+      if (!membership.ok) {
+        socket.emit("getMessages", {
+          success: false,
+          message: membership.error,
+        });
+        return;
+      }
+
       const messages = await Message.find({
-        conversationId: data.conversationId,
+        conversationId,
       })
         .sort({ createdAt: -1 })
         .populate({
@@ -171,9 +288,9 @@ export function registerChatEvents(io, socket) {
         ...message,
         id: message._id,
         sender: {
-          id: message.senderId._id,
-          name: message.senderId.name,
-          avatar: message.senderId.avatar,
+          id: message.senderId?._id?.toString?.() || "",
+          name: message.senderId?.name || "Unknown",
+          avatar: message.senderId?.avatar || null,
         },
       }));
 

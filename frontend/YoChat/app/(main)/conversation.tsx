@@ -8,7 +8,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import * as Icons from "phosphor-react-native";
 import ScreenWrapper from "@/components/ScreenWrapper";
 import Typo from "@/components/Typo";
@@ -25,7 +25,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import Loading from "@/components/Loading";
 import { uploadFileToCloudinary } from "@/services/imageService";
-import { getMessages, newMessage } from "@/socket/socketEvents";
+import { getMessages, newMessage, typing } from "@/socket/socketEvents";
 import { MessageProps, ResponseProps } from "@/types";
 
 const Conversation = () => {
@@ -43,6 +43,10 @@ const Conversation = () => {
   const [selectedFile, setSelectedFile] = useState<{ uri: string } | null>(
     null
   );
+  const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
+  const isTypingRef = useRef(false);
+  const typingStopTimerRef = useRef<any>(null);
+  const remoteTypingTimersRef = useRef<Record<string, any>>({});
   const participants = JSON.parse(stringifiedParticipants as string);
 
   let conversationAvatar = avatar;
@@ -58,14 +62,48 @@ const Conversation = () => {
   useEffect(() => {
     newMessage(newMessageHandler);
     getMessages(getMessageHandler);
+    typing(handleTyping);
 
     getMessages({ conversationId });
 
     return () => {
       newMessage(newMessageHandler, true);
       getMessages(getMessageHandler, true);
+      typing(handleTyping, true);
     };
   }, []);
+
+  const handleTyping = (res: any) => {
+    if (!res?.conversationId || String(res.conversationId) !== String(conversationId))
+      return;
+
+    const fromUserId = String(res?.user?.id || "");
+    if (!fromUserId || fromUserId === String(currentUser?.id)) return;
+
+    const name = String(res?.user?.name || "Someone");
+    const isTyping = !!res?.isTyping;
+
+    setTypingUsers((prev) => {
+      const next = { ...prev };
+      if (isTyping) next[fromUserId] = name;
+      else delete next[fromUserId];
+      return next;
+    });
+
+    if (remoteTypingTimersRef.current[fromUserId]) {
+      clearTimeout(remoteTypingTimersRef.current[fromUserId]);
+    }
+
+    if (isTyping) {
+      remoteTypingTimersRef.current[fromUserId] = setTimeout(() => {
+        setTypingUsers((prev) => {
+          const next = { ...prev };
+          delete next[fromUserId];
+          return next;
+        });
+      }, 2500);
+    }
+  };
 
   const newMessageHandler = (res: ResponseProps) => {
     setLoading(false);
@@ -102,6 +140,12 @@ const Conversation = () => {
     setLoading(true);
 
     try {
+      if (isTypingRef.current) {
+        typing({ conversationId, isTyping: false });
+        isTypingRef.current = false;
+      }
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+
       let attachment = null;
       if (selectedFile) {
         const uploadResult = await uploadFileToCloudinary(
@@ -137,6 +181,33 @@ const Conversation = () => {
     }
   };
 
+  const onChangeMessage = (text: string) => {
+    setMessage(text);
+
+    if (!conversationId) return;
+
+    if (!isTypingRef.current && text.trim().length > 0) {
+      typing({ conversationId, isTyping: true });
+      isTypingRef.current = true;
+    }
+
+    if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+    typingStopTimerRef.current = setTimeout(() => {
+      if (isTypingRef.current) {
+        typing({ conversationId, isTyping: false });
+        isTypingRef.current = false;
+      }
+    }, 800);
+  };
+
+  const typingLabel = (() => {
+    const names = Object.values(typingUsers);
+    if (names.length === 0) return null;
+    if (names.length === 1) return `${names[0]} is typing...`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
+    return `${names[0]} and others are typing...`;
+  })();
+
   return (
     <ScreenWrapper showPattern={true} bgOpacity={0.5}>
       <KeyboardAvoidingView
@@ -154,9 +225,25 @@ const Conversation = () => {
                 uri={conversationAvatar as string}
                 isGroup={type == "group"}
               />
-              <Typo color={colors.white} size={22} fontWeight={"400"}>
-                {conversationName}
-              </Typo>
+              <View style={{ flex: 1 }}>
+                <Typo
+                  color={colors.white}
+                  size={22}
+                  fontWeight={"400"}
+                  textProps={{ numberOfLines: 1 }}
+                >
+                  {conversationName}
+                </Typo>
+                {typingLabel && (
+                  <Typo
+                    size={13}
+                    color={colors.neutral200}
+                    textProps={{ numberOfLines: 1 }}
+                  >
+                    {typingLabel}
+                  </Typo>
+                )}
+              </View>
             </View>
           }
           rightIcon={
@@ -188,7 +275,7 @@ const Conversation = () => {
           <View style={styles.footer}>
             <Input
               value={message}
-              onChangeText={setMessage}
+              onChangeText={onChangeMessage}
               containerStyle={{
                 paddingLeft: spacingX._10,
                 paddingRight: scale(65),
