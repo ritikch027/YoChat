@@ -40,7 +40,7 @@ export function registerChatEvents(io, socket) {
         })
         .populate({
           path: "participants",
-          select: "name avatar email",
+          select: "name avatar email username",
         })
         .lean();
 
@@ -93,7 +93,7 @@ export function registerChatEvents(io, socket) {
         })
           .populate({
             path: "participants",
-            select: "name avatar email",
+            select: "name avatar email username",
           })
           .lean();
 
@@ -132,7 +132,7 @@ export function registerChatEvents(io, socket) {
       )
         .populate({
           path: "participants",
-          select: "name avatar email",
+          select: "name avatar email username",
         })
         .lean();
 

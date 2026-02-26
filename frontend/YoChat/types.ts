@@ -121,6 +121,7 @@ export type ConversationProps = {
     name: string;
     avatar: string;
     email: string;
+    username?: string | null;
   }[];
   name?: string;
   lastMessage?: {

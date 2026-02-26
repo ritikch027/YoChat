@@ -58,6 +58,8 @@ const Conversation = () => {
     conversationAvatar = otherParticipant.avatar;
 
   let conversationName = isDirect ? otherParticipant.name : name;
+  const conversationUsername =
+    isDirect && otherParticipant?.username ? `@${otherParticipant.username}` : null;
 
   useEffect(() => {
     newMessage(newMessageHandler);
@@ -234,15 +236,9 @@ const Conversation = () => {
                 >
                   {conversationName}
                 </Typo>
-                {typingLabel && (
-                  <Typo
-                    size={13}
-                    color={colors.neutral200}
-                    textProps={{ numberOfLines: 1 }}
-                  >
-                    {typingLabel}
-                  </Typo>
-                )}
+                <Typo size={13} color={colors.neutral200} textProps={{ numberOfLines: 1 }}>
+                  {typingLabel || conversationUsername || ""}
+                </Typo>
               </View>
             </View>
           }
