@@ -36,6 +36,7 @@ const styles = StyleSheet.create({
   leftIcon: {
     alignSelf: "flex-start",
     zIndex: 20,
+    flex: 1,
   },
   rightIcon: {
     alignSelf: "flex-end",

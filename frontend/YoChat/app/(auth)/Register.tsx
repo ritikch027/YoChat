@@ -5,7 +5,7 @@ import { colors, radius, spacingX, spacingY } from "@/constants/theme";
 import { verticalScale } from "@/utils/styling";
 import { useRouter } from "expo-router";
 import * as Icons from "phosphor-react-native";
-import React, { useContext, useRef, useState } from "react";
+import React, { useRef, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -26,20 +26,20 @@ const Register = () => {
   const [isLoading, setIsLoading] = useState(false);
   const router = useRouter();
   const [isSecure, setIsSecure] = useState(true);
-  
-  const {signUp}=useAuth();
+
+  const { signUp } = useAuth();
 
   const handleSubmit = async () => {
     if (!nameRef.current || !emailRef.current || !passwordRef.current) {
       Alert.alert("Sign Up", "Please fill all the fields");
       return;
     }
-    try{
+    try {
       setIsLoading(true);
-      await signUp(emailRef.current,passwordRef.current,nameRef.current,"")
-    }catch(err:any){
-      Alert.alert("Registration Error",err.message);
-    }finally{
+      await signUp(emailRef.current, passwordRef.current, nameRef.current, "");
+    } catch (err: any) {
+      Alert.alert("Registration Error", err.message);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -47,7 +47,7 @@ const Register = () => {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS == "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScreenWrapper bgOpacity={0.5} showPattern={true}>
         <View style={styles.container}>
@@ -127,9 +127,7 @@ const Register = () => {
               </View>
               <View style={styles.footer}>
                 <Typo color={colors.neutral600}>Already have an account?</Typo>
-                <TouchableOpacity
-                  onPress={() => router.push("/(auth)/Login")}
-                >
+                <TouchableOpacity onPress={() => router.push("/(auth)/Login")}>
                   <Typo color={colors.primaryDark} fontWeight={"bold"}>
                     Log In
                   </Typo>

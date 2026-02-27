@@ -52,7 +52,7 @@ const ConversationItem = ({
       params: {
         id: item._id,
         name: item.name,
-        avatar: item.avatar,
+        avatar: isDirect ? otherParticipant?.avatar : item.avatar,
         type: item.type,
         participants: JSON.stringify(item.participants),
       },

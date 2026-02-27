@@ -1,4 +1,4 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import React from "react";
 import { MessageProps } from "@/types";
 import { useAuth } from "@/contexts/authContext";
@@ -17,7 +17,7 @@ const MessageItem = ({
   isDirect: boolean;
 }) => {
   const { user: currentUser } = useAuth();
-  const isMe = currentUser?.id == item?.sender?.id;
+  const isMe = currentUser?.id === item?.sender?.id;
 
   const formattedDate = moment(item.createdAt).isSame(moment(), "day")
     ? moment(item.createdAt).format("h:mm A")

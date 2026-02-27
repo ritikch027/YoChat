@@ -18,11 +18,11 @@ const ScreenWrapper = ({
   isModal = false,
   bgOpacity = 1,
 }: ScreenWrapperProps) => {
-  let paddingTop = Platform.OS == "ios" ? height * 0.06 : 40;
+  let paddingTop = Platform.OS === "ios" ? height * 0.06 : 40;
   let paddingBottom = 0;
 
   if (isModal) {
-    paddingTop = Platform.OS == "ios" ? height * 0.02 : 45;
+    paddingTop = Platform.OS === "ios" ? height * 0.02 : 45;
     paddingBottom = height * 0.02;
   }
   return (

@@ -47,7 +47,7 @@ const Login = () => {
   return (
     <KeyboardAvoidingView
       style={{ flex: 1 }}
-      behavior={Platform.OS == "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScreenWrapper bgOpacity={0.5} showPattern={true}>
         <View style={styles.container}>

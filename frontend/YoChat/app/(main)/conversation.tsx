@@ -4,11 +4,16 @@ import {
   KeyboardAvoidingView,
   Platform,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import React, { useEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import * as Icons from "phosphor-react-native";
 import ScreenWrapper from "@/components/ScreenWrapper";
 import Typo from "@/components/Typo";
@@ -41,53 +46,70 @@ const Conversation = () => {
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [selectedFile, setSelectedFile] = useState<{ uri: string } | null>(
-    null
+    null,
   );
   const [typingUsers, setTypingUsers] = useState<Record<string, string>>({});
   const isTypingRef = useRef(false);
   const typingStopTimerRef = useRef<any>(null);
   const remoteTypingTimersRef = useRef<Record<string, any>>({});
-  const participants = JSON.parse(stringifiedParticipants as string);
+
+  const conversationIdRef = useRef<string | null>(null);
+  const currentUserIdRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    conversationIdRef.current = conversationId ? String(conversationId) : null;
+  }, [conversationId]);
+
+  useEffect(() => {
+    currentUserIdRef.current = currentUser?.id ? String(currentUser.id) : null;
+  }, [currentUser?.id]);
+
+  const participants = useMemo(() => {
+    try {
+      return JSON.parse(String(stringifiedParticipants ?? "[]"));
+    } catch {
+      return [];
+    }
+  }, [stringifiedParticipants]);
 
   let conversationAvatar = avatar;
-  let isDirect = type == "direct";
+  let isDirect = String(type) === "direct";
   const otherParticipant = isDirect
-    ? participants.find((p: any) => p._id != currentUser?.id)
+    ? currentUser?.id
+      ? participants.find((p: any) => String(p?._id) !== String(currentUser.id))
+      : null
     : null;
   if (isDirect && otherParticipant)
     conversationAvatar = otherParticipant.avatar;
 
-  let conversationName = isDirect ? otherParticipant.name : name;
+  let conversationName = isDirect
+    ? (otherParticipant?.name ?? "Unknown")
+    : String(name ?? "Group");
   const conversationUsername =
-    isDirect && otherParticipant?.username ? `@${otherParticipant.username}` : null;
+    isDirect && otherParticipant?.username
+      ? `@${otherParticipant.username}`
+      : null;
 
-  useEffect(() => {
-    newMessage(newMessageHandler);
-    getMessages(getMessageHandler);
-    typing(handleTyping);
-
-    getMessages({ conversationId });
-
-    return () => {
-      newMessage(newMessageHandler, true);
-      getMessages(getMessageHandler, true);
-      typing(handleTyping, true);
-    };
-  }, []);
-
-  const handleTyping = (res: any) => {
-    if (!res?.conversationId || String(res.conversationId) !== String(conversationId))
+  const handleTyping = useCallback((res: any) => {
+    const activeConversationId = conversationIdRef.current;
+    if (
+      !activeConversationId ||
+      !res?.conversationId ||
+      String(res.conversationId) !== String(activeConversationId)
+    ) {
       return;
+    }
 
     const fromUserId = String(res?.user?.id || "");
-    if (!fromUserId || fromUserId === String(currentUser?.id)) return;
+    const currentId = currentUserIdRef.current;
+    if (!fromUserId || (currentId && fromUserId === String(currentId))) return;
 
     const name = String(res?.user?.name || "Someone");
-    const isTyping = !!res?.isTyping;
+    const isTypingNow = !!res?.isTyping;
 
     setTypingUsers((prev) => {
       const next = { ...prev };
-      if (isTyping) next[fromUserId] = name;
+      if (isTypingNow) next[fromUserId] = name;
       else delete next[fromUserId];
       return next;
     });
@@ -95,8 +117,7 @@ const Conversation = () => {
     if (remoteTypingTimersRef.current[fromUserId]) {
       clearTimeout(remoteTypingTimersRef.current[fromUserId]);
     }
-
-    if (isTyping) {
+    if (isTypingNow) {
       remoteTypingTimersRef.current[fromUserId] = setTimeout(() => {
         setTypingUsers((prev) => {
           const next = { ...prev };
@@ -105,23 +126,63 @@ const Conversation = () => {
         });
       }, 2500);
     }
-  };
+  }, []);
 
-  const newMessageHandler = (res: ResponseProps) => {
+  const newMessageHandler = useCallback((res: ResponseProps) => {
     setLoading(false);
     console.log("got new Message res: ", res);
     if (res.success) {
-      if (res.data.conversationId == conversationId) {
+      if (
+        conversationIdRef.current &&
+        String(res.data.conversationId) === String(conversationIdRef.current)
+      ) {
         setMessages((prev) => [res.data as MessageProps, ...prev]);
       }
     } else {
       Alert.alert("Error", res.msg);
     }
-  };
-  const getMessageHandler = (res: ResponseProps) => {
+  }, []);
+
+  const getMessageHandler = useCallback((res: ResponseProps) => {
     console.log("got getMessage res: ", res);
     if (res.success) setMessages(res.data);
-  };
+  }, []);
+
+  useEffect(() => {
+    newMessage(newMessageHandler);
+    getMessages(getMessageHandler);
+    typing(handleTyping);
+
+    return () => {
+      newMessage(newMessageHandler, true);
+      getMessages(getMessageHandler, true);
+      typing(handleTyping, true);
+
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      Object.values(remoteTypingTimersRef.current).forEach((t) =>
+        clearTimeout(t),
+      );
+      remoteTypingTimersRef.current = {};
+
+      const activeConversationId = conversationIdRef.current;
+      if (activeConversationId && isTypingRef.current) {
+        typing({ conversationId: activeConversationId, isTyping: false });
+        isTypingRef.current = false;
+      }
+    };
+  }, [getMessageHandler, handleTyping, newMessageHandler]);
+
+  useEffect(() => {
+    if (!conversationId) return;
+
+    Object.values(remoteTypingTimersRef.current).forEach((t) =>
+      clearTimeout(t),
+    );
+    remoteTypingTimersRef.current = {};
+    setTypingUsers({});
+
+    getMessages({ conversationId });
+  }, [conversationId]);
 
   const onPickFile = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
@@ -152,13 +213,13 @@ const Conversation = () => {
       if (selectedFile) {
         const uploadResult = await uploadFileToCloudinary(
           selectedFile,
-          "message-attachments"
+          "message-attachments",
         );
         if (uploadResult.success) {
           attachment = uploadResult.data;
         } else {
-          setLoading(false);
           Alert.alert("Error", "Could not send the image!");
+          return;
         }
       }
 
@@ -188,6 +249,15 @@ const Conversation = () => {
 
     if (!conversationId) return;
 
+    if (text.trim().length === 0) {
+      if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
+      if (isTypingRef.current) {
+        typing({ conversationId, isTyping: false });
+        isTypingRef.current = false;
+      }
+      return;
+    }
+
     if (!isTypingRef.current && text.trim().length > 0) {
       typing({ conversationId, isTyping: true });
       isTypingRef.current = true;
@@ -213,7 +283,7 @@ const Conversation = () => {
   return (
     <ScreenWrapper showPattern={true} bgOpacity={0.5}>
       <KeyboardAvoidingView
-        behavior={Platform.OS == "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.container}
       >
         {/* header */}
@@ -225,7 +295,7 @@ const Conversation = () => {
               <Avatar
                 size={40}
                 uri={conversationAvatar as string}
-                isGroup={type == "group"}
+                isGroup={String(type) === "group"}
               />
               <View style={{ flex: 1 }}>
                 <Typo
@@ -236,7 +306,11 @@ const Conversation = () => {
                 >
                   {conversationName}
                 </Typo>
-                <Typo size={13} color={colors.neutral200} textProps={{ numberOfLines: 1 }}>
+                <Typo
+                  size={13}
+                  color={colors.neutral200}
+                  textProps={{ numberOfLines: 1 }}
+                >
                   {typingLabel || conversationUsername || ""}
                 </Typo>
               </View>

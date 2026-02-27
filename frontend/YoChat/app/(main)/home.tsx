@@ -1,7 +1,6 @@
 import {
   ScrollView,
   StyleSheet,
-  Text,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -15,7 +14,6 @@ import {
   getConversations,
   newConversation,
   newMessage,
-  testSocket,
 } from "@/socket/socketEvents";
 import { colors, radius, spacingX, spacingY } from "@/constants/theme";
 import { verticalScale } from "@/utils/styling";
@@ -25,12 +23,11 @@ import Loading from "@/components/Loading";
 import { ConversationProps, ResponseProps } from "@/types";
 
 const Home = () => {
-  const { user: currentUser, signOut } = useAuth();
+  const { user: currentUser } = useAuth();
   const router = useRouter();
   const [conversations, setConversations] = useState<ConversationProps[]>([]);
   const [selectedTab, setSelectedTab] = useState(0);
   const [loading, setLoading] = useState(false);
-  // console.log("user: ",user);
 
   useEffect(() => {
     getConversations(processConversations);
@@ -65,7 +62,7 @@ const Home = () => {
       let conversationId = res.data.conversationId;
       setConversations((prev) => {
         let updatedConversations = prev.map((item) => {
-          if (item._id == conversationId) item.lastMessage = res.data;
+          if (item._id === conversationId) item.lastMessage = res.data;
           return item;
         });
         return updatedConversations;
@@ -74,14 +71,14 @@ const Home = () => {
   };
 
   let directConversations = conversations
-    .filter((item: ConversationProps) => item.type == "direct")
+    .filter((item: ConversationProps) => item.type === "direct")
     .sort((a: ConversationProps, b: ConversationProps) => {
       const aDate = a?.lastMessage?.createdAt || a.createdAt;
       const bDate = b?.lastMessage?.createdAt || b.createdAt;
       return new Date(bDate).getTime() - new Date(aDate).getTime();
     });
   let groupConversations = conversations
-    .filter((item: ConversationProps) => item.type == "group")
+    .filter((item: ConversationProps) => item.type === "group")
     .sort((a: ConversationProps, b: ConversationProps) => {
       const aDate = a?.lastMessage?.createdAt || a.createdAt;
       const bDate = b?.lastMessage?.createdAt || b.createdAt;
@@ -130,7 +127,7 @@ const Home = () => {
                   onPress={() => setSelectedTab(0)}
                   style={[
                     styles.tabStyle,
-                    selectedTab == 0 && styles.activeTabStyle,
+                    selectedTab === 0 && styles.activeTabStyle,
                   ]}
                 >
                   <Typo>Direct Messages</Typo>
@@ -140,7 +137,7 @@ const Home = () => {
                   onPress={() => setSelectedTab(1)}
                   style={[
                     styles.tabStyle,
-                    selectedTab == 1 && styles.activeTabStyle,
+                    selectedTab === 1 && styles.activeTabStyle,
                   ]}
                 >
                   <Typo>Groups</Typo>
@@ -148,7 +145,7 @@ const Home = () => {
               </View>
             </View>
             <View style={styles.conversationList}>
-              {selectedTab == 0 &&
+              {selectedTab === 0 &&
                 directConversations.map((item: ConversationProps, index) => {
                   return (
                     <ConversationItem
@@ -159,7 +156,7 @@ const Home = () => {
                     />
                   );
                 })}
-              {selectedTab == 1 &&
+              {selectedTab === 1 &&
                 groupConversations.map((item: any, index) => {
                   return (
                     <ConversationItem
@@ -172,15 +169,15 @@ const Home = () => {
                 })}
 
               {!loading &&
-                selectedTab == 0 &&
-                directConversations.length == 0 && (
+                selectedTab === 0 &&
+                directConversations.length === 0 && (
                   <Typo style={{ textAlign: "center" }}>
                     You don{"'"}t have any messages
                   </Typo>
                 )}
               {!loading &&
-                selectedTab == 1 &&
-                groupConversations.length == 0 && (
+                selectedTab === 1 &&
+                groupConversations.length === 0 && (
                   <Typo style={{ textAlign: "center" }}>
                     You haven{"'"}t joined any groups yet!
                   </Typo>
