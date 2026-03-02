@@ -27,7 +27,7 @@ export function initializeSocket(server) {
       return next(new Error("Authentication error: no token provided"));
     }
 
-    jwt.verify(token, process.env.JWT_SECRET, (err, decoded) => {
+    jwt.verify(token, process.env.JWT_ACCESS_SECRET, (err, decoded) => {
       if (err) {
         return next(new Error("Autherntication error: invalid token"));
       }

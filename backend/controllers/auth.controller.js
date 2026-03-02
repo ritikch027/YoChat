@@ -1,6 +1,6 @@
 import User from "../models/User.js";
 import bcrypt from "bcryptjs";
-import { generateToken } from "../utils/token.js";
+import { generateAccessToken, generateRefreshToken } from "../utils/token.js";
 export const register = async (req, res) => {
   const { email, name, password, avatar } = req.body;
   try {
@@ -23,16 +23,18 @@ export const register = async (req, res) => {
     const salt = await bcrypt.genSalt(10);
     user.password = await bcrypt.hash(password, salt);
 
+    //gen token
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+    user.refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+    user.refreshTokenExpiresAt = new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000,
+    );
+
     //save user
     await user.save();
 
-    //gen token
-    const token = generateToken(user);
-
-    res.json({
-      success: true,
-      token,
-    });
+    res.json({ success: true, token: accessToken, refreshToken });
   } catch (err) {
     console.log(err);
     res.status(500).json({ message: "Internal server error" });
@@ -42,26 +44,33 @@ export const login = async (req, res) => {
   const { email, password } = req.body;
   try {
     //find user by email
-    const user=await User.findOne({email});
-    if(!user){
-        res.status(400).json({success:false,message:"Invalid Credentials"});
-        return;
+    const user = await User.findOne({ email });
+    if (!user) {
+      res.status(400).json({ success: false, message: "Invalid Credentials" });
+      return;
     }
-   
+
     //compare passwords
 
-    const isMatch=await bcrypt.compare(password,user.password);
-    if(!isMatch){
-        res.status(400).json({success:false,message:"Invalid Credentials"});
-        return;
-    } 
+    const isMatch = await bcrypt.compare(password, user.password);
+    if (!isMatch) {
+      res.status(400).json({ success: false, message: "Invalid Credentials" });
+      return;
+    }
 
     //gen token
-    const token = generateToken(user);
+    const accessToken = generateAccessToken(user);
+    const refreshToken = generateRefreshToken(user);
+    user.refreshTokenHash = await bcrypt.hash(refreshToken, 10);
+    user.refreshTokenExpiresAt = new Date(
+      Date.now() + 30 * 24 * 60 * 60 * 1000,
+    );
+    await user.save();
 
     res.json({
       success: true,
-      token,
+      token: accessToken,
+      refreshToken,
     });
   } catch (err) {
     console.log(err);

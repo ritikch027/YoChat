@@ -11,12 +11,9 @@ export async function connectSocket(): Promise<Socket> {
     throw new Error("no token found. USer must login first");
   }
 
-  if (!socket) {
-    socket = io(API_URL, {
-      auth: { token },
-    });
+  const waitForConnection = async (sock: Socket) => {
+    if (sock.connected) return;
 
-    // Wait for connection (or fail fast).
     await new Promise<void>((resolve, reject) => {
       const timeout = setTimeout(() => {
         cleanup();
@@ -24,7 +21,7 @@ export async function connectSocket(): Promise<Socket> {
       }, 8000);
 
       const onConnect = () => {
-        console.log("Socket connected: ", socket?.id);
+        console.log("Socket connected: ", sock?.id);
         cleanup();
         resolve();
       };
@@ -36,18 +33,29 @@ export async function connectSocket(): Promise<Socket> {
 
       const cleanup = () => {
         clearTimeout(timeout);
-        socket?.off("connect", onConnect);
-        socket?.off("connect_error", onError);
+        sock.off("connect", onConnect);
+        sock.off("connect_error", onError);
       };
 
-      socket?.once("connect", onConnect);
-      socket?.once("connect_error", onError);
+      sock.once("connect", onConnect);
+      sock.once("connect_error", onError);
+    });
+  };
+
+  if (!socket) {
+    socket = io(API_URL, {
+      auth: { token },
     });
 
     socket.on("disconnect", () => {
       console.log("Socket disconnected");
     });
+  } else {
+    socket.auth = { token };
+    if (!socket.connected) socket.connect();
   }
+
+  await waitForConnection(socket);
   return socket;
 }
 

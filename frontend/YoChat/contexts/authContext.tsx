@@ -1,4 +1,4 @@
-import { login, register } from "@/services/authService";
+import { login, refresh, register } from "@/services/authService";
 import { AuthContextProps, DecodedTokenProps, UserProps } from "@/types";
 import { useRouter } from "expo-router";
 import {
@@ -30,22 +30,43 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     loadToken();
   }, []);
 
+  const clearStoredAuth = async () => {
+    await AsyncStorage.removeItem("token");
+    await AsyncStorage.removeItem("refreshToken");
+  };
+
   const loadToken = async () => {
     const storedToken = await AsyncStorage.getItem("token");
+    const storedRefreshToken = await AsyncStorage.getItem("refreshToken");
     if (storedToken) {
       try {
         const decoded = jwtDecode<DecodedTokenProps>(storedToken);
         if (decoded.exp && decoded.exp < Date.now() / 1000) {
-          //token expired
-          await AsyncStorage.removeItem("token");
-          gotoWelcomePage();
-          return;
+          if (storedRefreshToken) {
+            try {
+              const refreshed = await refresh(storedRefreshToken);
+              await updateTokens(refreshed.token, refreshed.refreshToken);
+              disconnectSocket();
+              await connectSocket();
+              gotoHomePage();
+              return;
+            } catch (e) {
+              await clearStoredAuth();
+              gotoWelcomePage();
+              return;
+            }
+          } else {
+            await clearStoredAuth();
+            gotoWelcomePage();
+            return;
+          }
         }
         setToken(storedToken);
         await connectSocket();
         setUser(decoded.user);
         gotoHomePage();
       } catch (error) {
+        await clearStoredAuth();
         gotoWelcomePage();
         console.log("failed to decode token: ", error);
       }
@@ -65,20 +86,19 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     }, 1500);
   };
 
-  const updateToken = async (token: string) => {
-    if (token) {
-      setToken(token);
-      await AsyncStorage.setItem("token", token);
+  const updateTokens = async (token: string, refreshToken?: string) => {
+    if (!token) return;
+    setToken(token);
+    await AsyncStorage.setItem("token", token);
+    if (refreshToken) await AsyncStorage.setItem("refreshToken", refreshToken);
 
-      //decode
-      const decoded = jwtDecode<DecodedTokenProps>(token);
-      setUser(decoded.user);
-    }
+    const decoded = jwtDecode<DecodedTokenProps>(token);
+    setUser(decoded.user);
   };
 
   const signIn = async (email: string, password: string) => {
     const response = await login(email, password);
-    await updateToken(response.token);
+    await updateTokens(response.token, response.refreshToken);
     await connectSocket();
     router.replace("/(main)/home");
   };
@@ -90,7 +110,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
     avatar?: string | null
   ) => {
     const response = await register(email, password, name, avatar);
-    await updateToken(response.token);
+    await updateTokens(response.token, response.refreshToken);
     await connectSocket();
     router.replace("/(main)/home");
   };
@@ -98,14 +118,14 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const signOut = async () => {
     setToken(null);
     setUser(null);
-    await AsyncStorage.removeItem("token");
+    await clearStoredAuth();
     disconnectSocket();
     router.replace("/(auth)/Welcome");
   };
 
   return (
     <AuthContext.Provider
-      value={{ token, user, signIn, signUp, signOut, updateToken }}
+      value={{ token, user, signIn, signUp, signOut, updateToken: updateTokens }}
     >
       {children}
     </AuthContext.Provider>

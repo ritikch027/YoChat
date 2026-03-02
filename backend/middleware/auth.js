@@ -19,7 +19,7 @@ export const auth = async (req, res, next) => {
         .json({ success: false, message: "No token provided" });
     }
 
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    const decoded = jwt.verify(token, process.env.JWT_ACCESS_SECRET);
 
     // Extract user ID based on your token format
     const userId = decoded.user?.id;

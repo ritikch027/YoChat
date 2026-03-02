@@ -76,6 +76,10 @@ export type ResponseProps = {
   success: boolean;
   data?: any;
   msg?: string;
+  message?: string;
+  requestId?: string | null;
+  hasMore?: boolean;
+  nextCursor?: string | null;
 };
 
 export interface ButtonProps extends TouchableOpacityProps {

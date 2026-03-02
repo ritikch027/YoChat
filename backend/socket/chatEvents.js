@@ -1,5 +1,6 @@
 import Conversation from "../models/Conversation.js";
 import Message from "../models/Message.js";
+import mongoose from "mongoose";
 
 async function requireConversationParticipant(conversationId, userId) {
   const conversation = await Conversation.findById(conversationId).select(
@@ -246,12 +247,14 @@ export function registerChatEvents(io, socket) {
   });
   socket.on("getMessages", async (data) => {
     console.log("getMessages event: ", data);
+    const requestId = data?.requestId ? String(data.requestId) : null;
     try {
       const userId = socket.data.userId;
       if (!userId) {
         socket.emit("getMessages", {
           success: false,
           message: "Unauthorized",
+          requestId,
         });
         return;
       }
@@ -261,6 +264,7 @@ export function registerChatEvents(io, socket) {
         socket.emit("getMessages", {
           success: false,
           message: "Missing conversationId",
+          requestId,
         });
         return;
       }
@@ -270,21 +274,41 @@ export function registerChatEvents(io, socket) {
         socket.emit("getMessages", {
           success: false,
           message: membership.error,
+          requestId,
         });
         return;
       }
 
-      const messages = await Message.find({
-        conversationId,
-      })
-        .sort({ createdAt: -1 })
+      const limit = Math.max(
+        1,
+        Math.min(50, Number.isFinite(Number(data?.limit)) ? Number(data.limit) : 20),
+      );
+
+      let cursorId = null;
+      if (data?.cursor) {
+        try {
+          cursorId = new mongoose.Types.ObjectId(String(data.cursor));
+        } catch {
+          cursorId = null;
+        }
+      }
+
+      const query = { conversationId };
+      if (cursorId) query._id = { $lt: cursorId };
+
+      const messages = await Message.find(query)
+        .sort({ _id: -1 })
+        .limit(limit + 1)
         .populate({
           path: "senderId",
           select: "name avatar",
         })
         .lean();
 
-      const messageWithSender = messages.map((message) => ({
+      const hasMore = messages.length > limit;
+      const page = hasMore ? messages.slice(0, limit) : messages;
+
+      const messageWithSender = page.map((message) => ({
         ...message,
         id: message._id,
         sender: {
@@ -294,15 +318,24 @@ export function registerChatEvents(io, socket) {
         },
       }));
 
+      const nextCursor =
+        messageWithSender.length > 0
+          ? String(messageWithSender[messageWithSender.length - 1].id)
+          : null;
+
       socket.emit("getMessages", {
         success: true,
         data: messageWithSender,
+        hasMore,
+        nextCursor,
+        requestId,
       });
     } catch (error) {
       console.log("getMessage error: ", error);
       socket.emit("getMessages", {
         success: false,
         message: "Failed to get message",
+        requestId,
       });
     }
   });

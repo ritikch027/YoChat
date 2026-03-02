@@ -39,7 +39,7 @@ const WelcomeScreen = () => {
         <Button
           style={{ backgroundColor: colors.white }}
           loading={loading}
-          onPress={() => router.push("/(auth)/Register")}
+          onPress={() => router.replace("/(auth)/Register")}
         >
           <Typo size={23} fontWeight={"bold"}>
             Get Started

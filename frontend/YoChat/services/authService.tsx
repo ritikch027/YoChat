@@ -4,7 +4,7 @@ import axios from "axios";
 export const login = async (
   email: string,
   password: string
-): Promise<{ token: string }> => {
+): Promise<{ token: string; refreshToken?: string }> => {
   try {
     const response = await axios.post(`${API_URL}/auth/login`, {
       email,
@@ -22,7 +22,7 @@ export const register = async (
   password: string,
   name: string,
   avatar?: string | null
-): Promise<{ token: string }> => {
+): Promise<{ token: string; refreshToken?: string }> => {
   try {
     const response = await axios.post(`${API_URL}/auth/register`, {
       email,
@@ -34,6 +34,21 @@ export const register = async (
   } catch (err: any) {
     console.log("got error", err);
     const msg = err?.response?.data?.message || "Login Failed";
+    throw new Error(msg);
+  }
+};
+
+export const refresh = async (
+  refreshToken: string,
+): Promise<{ token: string; refreshToken?: string }> => {
+  try {
+    const response = await axios.post(`${API_URL}/auth/refresh`, {
+      refreshToken,
+    });
+    return response.data;
+  } catch (err: any) {
+    console.log("got error", err);
+    const msg = err?.response?.data?.message || "Refresh Failed";
     throw new Error(msg);
   }
 };

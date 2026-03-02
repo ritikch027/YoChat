@@ -127,7 +127,7 @@ const Register = () => {
               </View>
               <View style={styles.footer}>
                 <Typo color={colors.neutral600}>Already have an account?</Typo>
-                <TouchableOpacity onPress={() => router.push("/(auth)/Login")}>
+                <TouchableOpacity onPress={() => router.replace("/(auth)/Login")}>
                   <Typo color={colors.primaryDark} fontWeight={"bold"}>
                     Log In
                   </Typo>

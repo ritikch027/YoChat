@@ -1,5 +1,5 @@
 import User from "../models/User.js";
-import { generateToken } from "../utils/token.js";
+import { generateAccessToken } from "../utils/token.js";
 import validateUsername from "../utils/username.js";
 import { getPresence } from "../socket/presenceStore.js";
 
@@ -47,7 +47,7 @@ export const updateMyUsername = async (req, res) => {
       const updated = await User.findByIdAndUpdate(
         userId,
         { $set: { username: null, usernameSearch: null } },
-        { new: true }
+        { new: true },
       ).select("-password");
 
       return res.json({
@@ -81,11 +81,11 @@ export const updateMyUsername = async (req, res) => {
     const updated = await User.findByIdAndUpdate(
       userId,
       { $set: { username, usernameSearch } },
-      { new: true }
+      { new: true },
     ).select("-password");
 
     // 🔥 generate a fresh token with updated username
-    const token = generateToken(updated);
+    const token = generateAccessToken(updated);
 
     return res.json({
       success: true,
@@ -107,7 +107,7 @@ export const getUserByUsername = async (req, res) => {
     const usernameSearch = raw.toLowerCase();
 
     const user = await User.findOne({ usernameSearch }).select(
-      "_id name username avatar lastSeen"
+      "_id name username avatar lastSeen",
     );
 
     if (!user) {

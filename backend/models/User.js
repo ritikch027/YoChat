@@ -28,8 +28,10 @@ const UserSchema = new Schema(
       type: Date,
       default: null,
     },
+    refreshTokenHash: { type: String, default: null },
+    refreshTokenExpiresAt: { type: Date, default: null },
   },
-  { timestamps: true }
+  { timestamps: true },
 );
 
 UserSchema.index({ usernameSearch: 1 }, { unique: true, sparse: true });

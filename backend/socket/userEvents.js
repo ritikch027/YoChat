@@ -1,6 +1,6 @@
 import { Server as SocketIOServer } from "socket.io";
 import User from "../models/User.js";
-import { generateToken } from "../utils/token.js";
+import { generateAccessToken } from "../utils/token.js";
 import { getPresence } from "./presenceStore.js";
 
 export function registerUserEvents(io, socket) {
@@ -23,7 +23,7 @@ export function registerUserEvents(io, socket) {
       const updatedUser = await User.findByIdAndUpdate(
         userId,
         { name: data.name, avatar: data.avatar },
-        { new: true } //will return the user with updated values
+        { new: true }, //will return the user with updated values
       );
 
       if (!updatedUser) {
@@ -35,7 +35,7 @@ export function registerUserEvents(io, socket) {
 
       //gen token with updated values
 
-      const newToken = generateToken(updatedUser);
+      const newToken = generateAccessToken(updatedUser);
       socket.data.name = updatedUser.name;
       socket.data.avatar = updatedUser.avatar;
 
@@ -68,19 +68,19 @@ export function registerUserEvents(io, socket) {
 
       const users = await User.find(
         { _id: { $ne: currentUserId } },
-        { password: 0 } //exclude password field
+        { password: 0 }, //exclude password field
       ).lean(); //will fetch js objects
 
       const contacts = users.map((user) => {
         const presence = getPresence(user._id);
         return {
-        id: user._id.toString(),
-        name: user.name,
-        email: user.email,
-        username: user.username || null,
-        avatar: user.avatar || "",
-        online: presence.online,
-        lastSeen: presence.lastSeen || user.lastSeen || null,
+          id: user._id.toString(),
+          name: user.name,
+          email: user.email,
+          username: user.username || null,
+          avatar: user.avatar || "",
+          online: presence.online,
+          lastSeen: presence.lastSeen || user.lastSeen || null,
         };
       });
 

@@ -12,6 +12,12 @@ dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3000;
+app.use(
+  cors({
+    origin: "*", // Your frontend URL
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use("/auth", authRoutes);
@@ -23,12 +29,6 @@ initializeSocket(server);
 app.get("/", (req, res) => {
   res.send("Hello, World!");
 });
-app.use(
-  cors({
-    origin: "*", // Your frontend URL
-    credentials: true,
-  })
-);
 
 connectDB()
   .then(() => {

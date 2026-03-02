@@ -7,8 +7,10 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  Animated,
+  Platform,
 } from "react-native";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import ScreenWrapper from "@/components/ScreenWrapper";
 import { colors, radius, spacingX, spacingY } from "@/constants/theme";
@@ -31,10 +33,417 @@ import {
 import { uploadFileToCloudinary } from "@/services/imageService";
 import { searchUsers } from "@/services/usernameService";
 import moment from "moment";
+
+// ─── Design tokens ────────────────────────────────────────────────────────────
+const PALETTE = {
+  bg: "#F7F8FA",
+  surface: "#FFFFFF",
+  border: "#ECEEF2",
+  primary: "#5B6EF5",
+  primaryLight: "#EEF0FE",
+  green: "#22C55E",
+  greenLight: "#DCFCE7",
+  neutral300: "#D1D5DB",
+  neutral500: "#6B7280",
+  neutral700: "#374151",
+  black: "#111827",
+  white: "#FFFFFF",
+  shadow: "rgba(17,24,39,0.08)",
+};
+
+// ─── Sub-components ───────────────────────────────────────────────────────────
+
+const SearchBar = ({
+  value,
+  onChangeText,
+  loading,
+}: {
+  value: string;
+  onChangeText: (t: string) => void;
+  loading: boolean;
+}) => (
+  <View style={sb.wrapper}>
+    {/* magnifier icon — drawn with pure View */}
+    <View style={sb.iconWrap}>
+      <View style={sb.lens} />
+      <View style={sb.handle} />
+    </View>
+    <TextInput
+      style={sb.input}
+      placeholder="Search by name or @username…"
+      placeholderTextColor={PALETTE.neutral500}
+      value={value}
+      onChangeText={onChangeText}
+      autoCapitalize="none"
+      autoCorrect={false}
+    />
+    {loading && (
+      <ActivityIndicator
+        size="small"
+        color={PALETTE.primary}
+        style={{ marginRight: 12 }}
+      />
+    )}
+    {!loading && value.length > 0 && (
+      <TouchableOpacity onPress={() => onChangeText("")} style={sb.clearBtn}>
+        <Text style={sb.clearText}>✕</Text>
+      </TouchableOpacity>
+    )}
+  </View>
+);
+
+const sb = StyleSheet.create({
+  wrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: PALETTE.surface,
+    borderRadius: 16,
+    borderWidth: 1.5,
+    borderColor: PALETTE.border,
+    marginBottom: 16,
+    paddingHorizontal: 14,
+    height: 50,
+    shadowColor: PALETTE.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  iconWrap: {
+    width: 20,
+    height: 20,
+    marginRight: 10,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  lens: {
+    width: 13,
+    height: 13,
+    borderRadius: 7,
+    borderWidth: 2,
+    borderColor: PALETTE.neutral500,
+    position: "absolute",
+    top: 0,
+    left: 0,
+  },
+  handle: {
+    width: 6,
+    height: 2,
+    backgroundColor: PALETTE.neutral500,
+    borderRadius: 1,
+    position: "absolute",
+    bottom: 0,
+    right: 0,
+    transform: [{ rotate: "45deg" }],
+  },
+  input: {
+    flex: 1,
+    fontSize: 15,
+    color: PALETTE.black,
+    fontWeight: "400",
+  },
+  clearBtn: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: PALETTE.neutral300,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 6,
+  },
+  clearText: { fontSize: 10, color: PALETTE.neutral700, fontWeight: "700" },
+});
+
+// ─── Chip row for selected participants ───────────────────────────────────────
+const SelectedChips = ({
+  participants,
+  contacts,
+  onRemove,
+}: {
+  participants: string[];
+  contacts: any[];
+  onRemove: (id: string) => void;
+}) => {
+  if (participants.length === 0) return null;
+  return (
+    <ScrollView
+      horizontal
+      showsHorizontalScrollIndicator={false}
+      style={{ marginBottom: 12 }}
+      contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}
+    >
+      {participants.map((id) => {
+        const user = contacts.find((c: any) => c.id === id);
+        return (
+          <TouchableOpacity
+            key={id}
+            onPress={() => onRemove(id)}
+            style={chip.wrap}
+          >
+            <Avatar size={26} uri={user?.avatar} />
+            <Text style={chip.name} numberOfLines={1}>
+              {user?.name?.split(" ")[0] ?? "User"}
+            </Text>
+            <Text style={chip.x}>✕</Text>
+          </TouchableOpacity>
+        );
+      })}
+    </ScrollView>
+  );
+};
+
+const chip = StyleSheet.create({
+  wrap: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: PALETTE.primaryLight,
+    borderRadius: 20,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: PALETTE.primary + "33",
+  },
+  name: {
+    fontSize: 13,
+    color: PALETTE.primary,
+    fontWeight: "600",
+    maxWidth: 70,
+  },
+  x: { fontSize: 10, color: PALETTE.primary, fontWeight: "700" },
+});
+
+// ─── Contact row ──────────────────────────────────────────────────────────────
+const ContactRow = ({
+  user,
+  isSelected,
+  isGroupMode,
+  presence,
+  onPress,
+}: {
+  user: any;
+  isSelected: boolean;
+  isGroupMode: boolean;
+  presence: { online: boolean; lastSeen?: string | null };
+  onPress: () => void;
+}) => {
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  const handlePress = () => {
+    Animated.sequence([
+      Animated.timing(scaleAnim, {
+        toValue: 0.97,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+      Animated.timing(scaleAnim, {
+        toValue: 1,
+        duration: 80,
+        useNativeDriver: true,
+      }),
+    ]).start();
+    onPress();
+  };
+
+  const statusText = presence.online
+    ? "Online"
+    : presence.lastSeen
+      ? `Last seen ${moment(presence.lastSeen).fromNow()}`
+      : "Offline";
+
+  return (
+    <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+      <TouchableOpacity
+        activeOpacity={0.85}
+        style={[cr.row, isSelected && cr.rowSelected]}
+        onPress={handlePress}
+      >
+        <View style={cr.avatarWrap}>
+          <Avatar size={48} uri={user.avatar} />
+          <View
+            style={[cr.dot, presence.online ? cr.dotOnline : cr.dotOffline]}
+          />
+        </View>
+
+        <View style={{ flex: 1, marginLeft: 12 }}>
+          <Text style={cr.name}>{user.name}</Text>
+          <Text style={cr.meta} numberOfLines={1}>
+            {user?.username ? `@${user.username}  · ` : ""}
+            <Text style={[cr.status, presence.online && cr.statusOnline]}>
+              {statusText}
+            </Text>
+          </Text>
+        </View>
+
+        {isGroupMode && (
+          <View style={[cr.checkOuter, isSelected && cr.checkOuterSel]}>
+            {isSelected && <View style={cr.checkInner} />}
+          </View>
+        )}
+
+        {!isGroupMode && (
+          <View style={cr.arrow}>
+            <Text style={cr.arrowText}>›</Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </Animated.View>
+  );
+};
+
+const cr = StyleSheet.create({
+  row: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: PALETTE.surface,
+    borderRadius: 16,
+    padding: 12,
+    marginBottom: 8,
+    borderWidth: 1.5,
+    borderColor: "transparent",
+    shadowColor: PALETTE.shadow,
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 1,
+    shadowRadius: 4,
+    elevation: 1,
+  },
+  rowSelected: {
+    borderColor: PALETTE.primary,
+    backgroundColor: PALETTE.primaryLight,
+  },
+  avatarWrap: { position: "relative" },
+  dot: {
+    position: "absolute",
+    bottom: 1,
+    right: 1,
+    width: 12,
+    height: 12,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: PALETTE.surface,
+  },
+  dotOnline: { backgroundColor: PALETTE.green },
+  dotOffline: { backgroundColor: PALETTE.neutral300 },
+  name: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: PALETTE.black,
+    marginBottom: 2,
+  },
+  meta: { fontSize: 12.5, color: PALETTE.neutral500 },
+  status: { color: PALETTE.neutral500 },
+  statusOnline: { color: PALETTE.green, fontWeight: "600" },
+  checkOuter: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    borderWidth: 2,
+    borderColor: PALETTE.neutral300,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 8,
+  },
+  checkOuterSel: {
+    borderColor: PALETTE.primary,
+    backgroundColor: PALETTE.primary,
+  },
+  checkInner: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: PALETTE.white,
+  },
+  arrow: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    backgroundColor: PALETTE.bg,
+    justifyContent: "center",
+    alignItems: "center",
+    marginLeft: 6,
+  },
+  arrowText: { fontSize: 20, color: PALETTE.neutral500, marginTop: -2 },
+});
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+const EmptyState = ({ query }: { query: string }) => (
+  <View style={es.wrap}>
+    <View style={es.icon}>
+      <Text style={es.emoji}>{query ? "🔍" : "👥"}</Text>
+    </View>
+    <Text style={es.title}>
+      {query ? "No results found" : "No contacts yet"}
+    </Text>
+    <Text style={es.sub}>
+      {query
+        ? `Try searching for a different name or @username`
+        : `Search for people to start a conversation`}
+    </Text>
+  </View>
+);
+
+const es = StyleSheet.create({
+  wrap: { alignItems: "center", paddingTop: 48, paddingHorizontal: 24 },
+  icon: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    backgroundColor: PALETTE.primaryLight,
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 16,
+  },
+  emoji: { fontSize: 30 },
+  title: {
+    fontSize: 17,
+    fontWeight: "700",
+    color: PALETTE.black,
+    marginBottom: 6,
+  },
+  sub: {
+    fontSize: 14,
+    color: PALETTE.neutral500,
+    textAlign: "center",
+    lineHeight: 20,
+  },
+});
+
+// ─── Section label ────────────────────────────────────────────────────────────
+const SectionLabel = ({ label, count }: { label: string; count: number }) => (
+  <View style={sl.row}>
+    <Text style={sl.text}>{label}</Text>
+    {count > 0 && (
+      <View style={sl.badge}>
+        <Text style={sl.badgeText}>{count}</Text>
+      </View>
+    )}
+  </View>
+);
+
+const sl = StyleSheet.create({
+  row: { flexDirection: "row", alignItems: "center", marginBottom: 10, gap: 8 },
+  text: {
+    fontSize: 12,
+    fontWeight: "700",
+    color: PALETTE.neutral500,
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+  },
+  badge: {
+    backgroundColor: PALETTE.primaryLight,
+    borderRadius: 10,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+  },
+  badgeText: { fontSize: 11, fontWeight: "700", color: PALETTE.primary },
+});
+
+// ─── Main component ───────────────────────────────────────────────────────────
 const NewConversationModal = () => {
   const { isGroup } = useLocalSearchParams();
   const isGroupMode = isGroup == "1";
   const router = useRouter();
+
   const [groupAvatar, setGroupAvatar] = useState<{ uri: string } | null>(null);
   const [groupName, setGroupName] = useState("");
   const [contacts, setContacts] = useState([]);
@@ -42,7 +451,7 @@ const NewConversationModal = () => {
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>(
-    []
+    [],
   );
   const [isLoading, setIsLoading] = useState(false);
   const [presence, setPresence] = useState<
@@ -66,13 +475,10 @@ const NewConversationModal = () => {
   }, []);
 
   const processGetContacts = (res: any) => {
-    // console.log("got contacts: ", res);
-    if (res.success) {
-      setContacts(res.data);
-    }
+    if (res.success) setContacts(res.data);
   };
+
   const processNewConversation = (res: any) => {
-    console.log("new Conversation: ", res.data.participants);
     setIsLoading(false);
     if (res.success) {
       router.back();
@@ -87,7 +493,6 @@ const NewConversationModal = () => {
         },
       });
     } else {
-      console.log("Error fetching/creating conversation: ", res.msg);
       Alert.alert("Error", res.msg);
     }
   };
@@ -114,19 +519,18 @@ const NewConversationModal = () => {
       },
     }));
   };
-  const toggleParticipant = (user: any) => {
-    setSelectedParticipants((prev: any) => {
-      if (prev.includes(user.id)) {
-        return prev.filter((id: string) => id != user.id);
-      }
 
-      return [...prev, user.id];
-    });
+  const toggleParticipant = (user: any) => {
+    setSelectedParticipants((prev) =>
+      prev.includes(user.id)
+        ? prev.filter((id) => id !== user.id)
+        : [...prev, user.id],
+    );
   };
 
   const onSelectUser = (user: any) => {
     if (!currentUser) {
-      Alert.alert("Authentication", "Pleaselogin to start a conversation");
+      Alert.alert("Authentication", "Please login to start a conversation");
       return;
     }
     if (isGroupMode) {
@@ -138,21 +542,20 @@ const NewConversationModal = () => {
       });
     }
   };
+
   const createGroup = async () => {
     if (!groupName.trim() || !currentUser || selectedParticipants.length < 2)
       return;
-
     setIsLoading(true);
     try {
       let avatar: any = null;
       if (groupAvatar) {
         const uploadResult = await uploadFileToCloudinary(
           groupAvatar,
-          "group-avatar"
+          "group-avatar",
         );
         if (uploadResult.success) avatar = uploadResult.data;
       }
-
       newConversation({
         type: "group",
         participants: [currentUser.id, ...selectedParticipants],
@@ -160,7 +563,6 @@ const NewConversationModal = () => {
         avatar,
       });
     } catch (error: any) {
-      console.log("Error creating group: ", error);
       Alert.alert("Error", error.message);
     } finally {
       setIsLoading(false);
@@ -170,52 +572,40 @@ const NewConversationModal = () => {
   const onPickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      // allowsEditing: true,
       aspect: [4, 3],
       quality: 1,
     });
-
-    console.log(result);
-
-    if (!result.canceled) {
-      setGroupAvatar(result.assets[0]);
-    }
+    if (!result.canceled) setGroupAvatar(result.assets[0]);
   };
 
   useEffect(() => {
     if (!token) return;
-
     const trimmed = query.trim();
     if (!trimmed) {
       setSearchResults([]);
       setSearchLoading(false);
       return;
     }
-
     setSearchLoading(true);
-
     const id = setTimeout(async () => {
       try {
         const users = await searchUsers(token, trimmed);
-
-        // Normalize to match your contacts shape
-        const normalized = users.map((u) => ({
-          id: u._id,
-          name: u.name,
-          avatar: u.avatar,
-          username: u.username,
-          online: u.online,
-          lastSeen: u.lastSeen,
-        }));
-
-        setSearchResults(normalized);
+        setSearchResults(
+          users.map((u) => ({
+            id: u._id,
+            name: u.name,
+            avatar: u.avatar,
+            username: u.username,
+            online: u.online,
+            lastSeen: u.lastSeen,
+          })),
+        );
       } catch (err: any) {
         console.log("searchUsers error:", err?.response?.data || err.message);
       } finally {
         setSearchLoading(false);
       }
     }, 400);
-
     return () => clearTimeout(id);
   }, [query, token]);
 
@@ -224,135 +614,129 @@ const NewConversationModal = () => {
   const getUserPresence = (user: any) => {
     const id = String(user?.id || "");
     const live = id ? presence[id] : undefined;
-    const online = live?.online ?? !!user?.online;
-    const lastSeen = live?.lastSeen ?? user?.lastSeen ?? null;
-    return { online, lastSeen };
+    return {
+      online: live?.online ?? !!user?.online,
+      lastSeen: live?.lastSeen ?? user?.lastSeen ?? null,
+    };
   };
+
+  const allData = [...contacts, ...searchResults];
+
+  const showCreateBtn = isGroupMode && selectedParticipants.length >= 2;
 
   return (
     <ScreenWrapper isModal={true}>
-      <View style={styles.container}>
+      <View style={s.container}>
+        {/* ── Header ── */}
         <Header
-          title={isGroupMode ? "New Group" : "Select User"}
-          leftIcon={<BackButton color={colors.black} />}
-        />
-        <TextInput
-          placeholder="Search by username or name (e.g. @ritik)"
-          value={query}
-          onChangeText={setQuery}
-          autoCapitalize="none"
-          style={{
-            borderWidth: 1,
-            borderRadius: 10,
-            paddingHorizontal: 12,
-            paddingVertical: 8,
-            marginBottom: 12,
-          }}
+          title={isGroupMode ? "New Group" : "New Message"}
+          leftIcon={<BackButton color={PALETTE.black} />}
         />
 
-        {searchLoading && (
-          <View
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              marginBottom: 8,
-            }}
-          >
-            <ActivityIndicator />
-            <Text style={{ marginLeft: 8 }}>Searching…</Text>
-          </View>
-        )}
-
+        {/* ── Group info (avatar + name) ── */}
         {isGroupMode && (
-          <View style={styles.groupInfoIndicator}>
-            <View style={styles.avatarContainer}>
-              <TouchableOpacity activeOpacity={0.9} onPress={onPickImage}>
-                <Avatar
-                  uri={groupAvatar?.uri || null}
-                  size={100}
-                  isGroup={true}
-                />
-              </TouchableOpacity>
-            </View>
-
-            <View style={styles.groupNameContainer}>
-              <Input
-                placeholder="Group name"
+          <View style={s.groupCard}>
+            <TouchableOpacity
+              onPress={onPickImage}
+              style={s.avatarBtn}
+              activeOpacity={0.8}
+            >
+              <Avatar uri={groupAvatar?.uri || null} size={68} isGroup={true} />
+              <View style={s.cameraChip}>
+                <Text style={s.cameraEmoji}>📷</Text>
+              </View>
+            </TouchableOpacity>
+            <View style={{ flex: 1 }}>
+              <TextInput
+                style={s.groupNameInput}
+                placeholder="Group name…"
+                placeholderTextColor={PALETTE.neutral500}
                 value={groupName}
                 onChangeText={setGroupName}
               />
+              <Text
+                style={[
+                  s.groupHint,
+                  selectedParticipants.length >= 2 && s.groupHintReady,
+                ]}
+              >
+                {selectedParticipants.length} of 2+ members selected
+              </Text>
             </View>
           </View>
         )}
 
+        {/* ── Selected chips ── */}
+        {isGroupMode && (
+          <SelectedChips
+            participants={selectedParticipants}
+            contacts={allData}
+            onRemove={(id) =>
+              setSelectedParticipants((p) => p.filter((x) => x !== id))
+            }
+          />
+        )}
+
+        {/* ── Search bar ── */}
+        <SearchBar
+          value={query}
+          onChangeText={setQuery}
+          loading={searchLoading}
+        />
+
+        {/* ── List ── */}
         <ScrollView
           showsVerticalScrollIndicator={false}
+          keyboardShouldPersistTaps="handled"
           contentContainerStyle={[
-            styles.contactList,
+            s.list,
             {
-              paddingBottom:
-                isGroupMode && selectedParticipants.length >= 2
-                  ? verticalScale(100)
-                  : spacingY._20,
+              paddingBottom: showCreateBtn ? verticalScale(110) : spacingY._20,
             },
           ]}
         >
-          {data.map((user: any, index) => {
-            const isSelected = selectedParticipants.includes(user.id);
-            const p = getUserPresence(user);
-            const statusText = p.online
-              ? "Online"
-              : p.lastSeen
-                ? `Last seen ${moment(p.lastSeen).fromNow()}`
-                : "Offline";
-            return (
-              <TouchableOpacity
-                activeOpacity={0.7}
-                key={index}
-                style={[styles.contactRow]}
-                onPress={() => onSelectUser(user)}
-              >
-                <Avatar size={45} uri={user.avatar} />
-                <View style={{ flex: 1 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    <View
-                      style={{
-                        width: 10,
-                        height: 10,
-                        borderRadius: 10,
-                        backgroundColor: p.online ? colors.green : colors.neutral400,
-                      }}
-                    />
-                    <Typo fontWeight={"600"}>{user.name}</Typo>
-                  </View>
-                  <Typo size={13} color={colors.neutral600}>
-                    {user?.username ? `@${user.username}  ` : ""}
-                    {statusText}
-                  </Typo>
-                </View>
-                {isGroupMode && (
-                  <View style={styles.selectionIndicator}>
-                    <View
-                      style={[styles.checkBox, isSelected && styles.checked]}
-                    />
-                  </View>
-                )}
-              </TouchableOpacity>
-            );
-          })}
+          {data.length > 0 && (
+            <SectionLabel
+              label={query.trim() ? "Search results" : "Contacts"}
+              count={data.length}
+            />
+          )}
+
+          {data.length === 0 && !searchLoading && <EmptyState query={query} />}
+
+          {data.map((user: any, index: number) => (
+            <ContactRow
+              key={user.id ?? index}
+              user={user}
+              isSelected={selectedParticipants.includes(user.id)}
+              isGroupMode={isGroupMode}
+              presence={getUserPresence(user)}
+              onPress={() => onSelectUser(user)}
+            />
+          ))}
         </ScrollView>
 
-        {isGroupMode && selectedParticipants.length >= 2 && (
-          <View style={styles.createGroupButton}>
-            <Button
+        {/* ── Create group button ── */}
+        {showCreateBtn && (
+          <View style={s.fab}>
+            <TouchableOpacity
+              style={[
+                s.fabBtn,
+                (!groupName.trim() || isLoading) && s.fabBtnDisabled,
+              ]}
               onPress={createGroup}
-              disabled={!groupName.trim()}
-              loading={isLoading}
+              disabled={!groupName.trim() || isLoading}
+              activeOpacity={0.85}
             >
-              <Typo fontWeight={"bold"} size={17}>
-                Create Group
-              </Typo>
-            </Button>
+              {isLoading ? (
+                <ActivityIndicator color={PALETTE.white} />
+              ) : (
+                <>
+                  <Text style={s.fabText}>Create Group</Text>
+                  <Text style={s.fabArrow}>→</Text>
+                </>
+              )}
+            </TouchableOpacity>
           </View>
         )}
       </View>
@@ -362,55 +746,100 @@ const NewConversationModal = () => {
 
 export default NewConversationModal;
 
-const styles = StyleSheet.create({
+// ─── Root styles ──────────────────────────────────────────────────────────────
+const s = StyleSheet.create({
   container: {
-    marginHorizontal: spacingX._15,
     flex: 1,
+    backgroundColor: PALETTE.bg,
+    paddingHorizontal: spacingX._15,
   },
-  groupInfoIndicator: {
-    alignItems: "center",
-    marginTop: spacingY._10,
-  },
-  avatarContainer: {
-    marginBottom: spacingY._20,
-  },
-  groupNameContainer: {
-    width: "100%",
-  },
-  contactRow: {
+  groupCard: {
     flexDirection: "row",
     alignItems: "center",
-    gap: spacingY._10,
-    paddingVertical: radius._10,
+    backgroundColor: PALETTE.surface,
+    borderRadius: 20,
+    padding: 16,
+    marginBottom: 14,
+    gap: 14,
+    borderWidth: 1.5,
+    borderColor: PALETTE.border,
+    shadowColor: PALETTE.shadow,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 1,
+    shadowRadius: 8,
+    elevation: 2,
   },
-  contactList: {
-    gap: spacingY._5,
-    marginTop: spacingY._10,
-    paddingTop: spacingY._10,
-    // paddingBottom: verticalScale(100),
-  },
-  selectionIndicator: {
-    marginLeft: "auto",
-    marginRight: spacingX._10,
-  },
-  checkBox: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
+  avatarBtn: { position: "relative" },
+  cameraChip: {
+    position: "absolute",
+    bottom: -4,
+    right: -4,
+    width: 26,
+    height: 26,
+    borderRadius: 13,
+    backgroundColor: PALETTE.primary,
+    justifyContent: "center",
+    alignItems: "center",
     borderWidth: 2,
-    borderColor: colors.primary,
+    borderColor: PALETTE.surface,
   },
-  checked: {
-    backgroundColor: colors.primary,
+  cameraEmoji: { fontSize: 12 },
+  groupNameInput: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: PALETTE.black,
+    borderBottomWidth: 2,
+    borderBottomColor: PALETTE.primary,
+    paddingBottom: 4,
+    marginBottom: 4,
   },
-  createGroupButton: {
+  groupHint: {
+    fontSize: 12,
+    color: PALETTE.neutral500,
+    fontWeight: "500",
+  },
+  groupHintReady: {
+    color: PALETTE.green,
+  },
+  list: {
+    paddingTop: 4,
+  },
+  fab: {
     position: "absolute",
     bottom: 0,
-    left: 0,
-    right: 0,
-    padding: spacingX._15,
-    backgroundColor: colors.white,
-    borderTopWidth: 1,
-    borderTopColor: colors.neutral200,
+    left: spacingX._15,
+    right: spacingX._15,
+    paddingBottom: Platform.OS === "ios" ? 28 : 16,
+    paddingTop: 12,
+    backgroundColor: PALETTE.bg,
+  },
+  fabBtn: {
+    backgroundColor: PALETTE.primary,
+    borderRadius: 18,
+    height: 56,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    shadowColor: PALETTE.primary,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.35,
+    shadowRadius: 14,
+    elevation: 6,
+  },
+  fabBtnDisabled: {
+    backgroundColor: PALETTE.neutral300,
+    shadowOpacity: 0,
+  },
+  fabText: {
+    color: PALETTE.white,
+    fontSize: 16,
+    fontWeight: "700",
+    letterSpacing: 0.3,
+  },
+  fabArrow: {
+    color: PALETTE.white,
+    fontSize: 20,
+    fontWeight: "300",
   },
 });
