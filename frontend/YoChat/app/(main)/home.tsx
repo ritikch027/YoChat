@@ -21,7 +21,6 @@ import { useRouter } from "expo-router";
 import ConversationItem from "@/components/ConversationItem";
 import Loading from "@/components/Loading";
 import { ConversationProps, ResponseProps } from "@/types";
-
 const Home = () => {
   const { user: currentUser } = useAuth();
   const router = useRouter();

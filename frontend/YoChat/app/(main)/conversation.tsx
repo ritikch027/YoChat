@@ -36,10 +36,12 @@ import {
   presenceGet,
   presenceInit,
   presenceUpdate,
+  presenceUsers,
   typing,
 } from "@/socket/socketEvents";
 import { MessageProps, ResponseProps } from "@/types";
 import TypingMessageItem from "@/components/TypingMessageItem";
+import moment from "moment";
 
 const Conversation = () => {
   const { user: currentUser } = useAuth();
@@ -50,7 +52,10 @@ const Conversation = () => {
     avatar,
     type,
   } = useLocalSearchParams();
-  const [messages, setMessages] = useState<MessageProps[]>([]);
+  const [messageState, setMessageState] = useState<{
+    conversationId: string | null;
+    items: MessageProps[];
+  }>({ conversationId: null, items: [] });
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -64,14 +69,15 @@ const Conversation = () => {
     Record<string, { online: boolean; lastSeen?: string | null }>
   >({});
   const isTypingRef = useRef(false);
+  const lastTypingEmitAtRef = useRef(0);
   const typingStopTimerRef = useRef<any>(null);
   const remoteTypingTimersRef = useRef<Record<string, any>>({});
 
   const conversationIdRef = useRef<string | null>(null);
   const currentUserIdRef = useRef<string | null>(null);
-  const pendingGetMessagesKindRef = useRef<Record<string, "replace" | "append">>(
-    {},
-  );
+  const pendingGetMessagesKindRef = useRef<
+    Record<string, "replace" | "append">
+  >({});
 
   useEffect(() => {
     conversationIdRef.current = conversationId ? String(conversationId) : null;
@@ -110,8 +116,12 @@ const Conversation = () => {
     ? String(otherParticipant?._id ?? otherParticipant?.id ?? "")
     : "";
   const isOtherOnline = isDirect
-    ? (presence[otherUserId]?.online ?? !!otherParticipant?.online) && !!otherUserId
+    ? (presence[otherUserId]?.online ?? !!otherParticipant?.online) &&
+      !!otherUserId
     : false;
+  const otherLastSeen = isDirect
+    ? presence[otherUserId]?.lastSeen || null
+    : null;
 
   const handleTyping = useCallback((res: any) => {
     const activeConversationId = conversationIdRef.current;
@@ -147,7 +157,7 @@ const Conversation = () => {
           delete next[fromUserId];
           return next;
         });
-      }, 2500);
+      }, 1000);
     }
   }, []);
 
@@ -174,15 +184,37 @@ const Conversation = () => {
     }));
   }, []);
 
+  const handlePresenceUsers = useCallback((res: any) => {
+    if (!res?.success || !res?.data) return;
+    setPresence((prev) => {
+      const next = { ...prev };
+      Object.entries(res.data).forEach(([id, p]: any) => {
+        next[String(id)] = {
+          online: !!p?.online,
+          lastSeen: p?.lastSeen || next[String(id)]?.lastSeen || null,
+        };
+      });
+      return next;
+    });
+  }, []);
+
   const newMessageHandler = useCallback((res: ResponseProps) => {
     setLoading(false);
-    console.log("got new Message res: ", res);
     if (res.success) {
       if (
         conversationIdRef.current &&
         String(res.data.conversationId) === String(conversationIdRef.current)
       ) {
-        setMessages((prev) => [res.data as MessageProps, ...prev]);
+        setMessageState((prev) => {
+          const activeId = conversationIdRef.current
+            ? String(conversationIdRef.current)
+            : null;
+          if (!activeId || prev.conversationId !== activeId) return prev;
+          return {
+            conversationId: prev.conversationId,
+            items: [res.data as MessageProps, ...prev.items],
+          };
+        });
       }
     } else {
       Alert.alert("Error", res.msg);
@@ -190,7 +222,6 @@ const Conversation = () => {
   }, []);
 
   const getMessageHandler = useCallback((res: ResponseProps) => {
-    console.log("got getMessage res: ", res);
     const requestId = res?.requestId ? String(res.requestId) : null;
     const kind = requestId
       ? pendingGetMessagesKindRef.current[requestId] || "replace"
@@ -201,10 +232,24 @@ const Conversation = () => {
     if (res.success) {
       const page = Array.isArray(res.data) ? (res.data as MessageProps[]) : [];
       if (kind === "append") {
-        setMessages((prev) => [...prev, ...page]);
+        setMessageState((prev) => {
+          const activeId = conversationIdRef.current
+            ? String(conversationIdRef.current)
+            : null;
+          if (!activeId || prev.conversationId !== activeId) return prev;
+          return {
+            conversationId: prev.conversationId,
+            items: [...prev.items, ...page],
+          };
+        });
         setLoadingMore(false);
       } else {
-        setMessages(page);
+        const activeId = conversationIdRef.current
+          ? String(conversationIdRef.current)
+          : conversationId
+            ? String(conversationId)
+            : null;
+        setMessageState({ conversationId: activeId, items: page });
       }
       setHasMore(!!res?.hasMore);
       setNextCursor(
@@ -244,6 +289,7 @@ const Conversation = () => {
     presenceInit(processPresenceInit);
     presenceUpdate(processPresenceUpdate);
     presenceGet();
+    presenceUsers(handlePresenceUsers);
 
     return () => {
       newMessage(newMessageHandler, true);
@@ -251,6 +297,7 @@ const Conversation = () => {
       typing(handleTyping, true);
       presenceInit(processPresenceInit, true);
       presenceUpdate(processPresenceUpdate, true);
+      presenceUsers(handlePresenceUsers, true);
 
       if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
       Object.values(remoteTypingTimersRef.current).forEach((t) =>
@@ -268,6 +315,7 @@ const Conversation = () => {
     getMessageHandler,
     handleTyping,
     newMessageHandler,
+    handlePresenceUsers,
     processPresenceInit,
     processPresenceUpdate,
   ]);
@@ -281,13 +329,20 @@ const Conversation = () => {
     remoteTypingTimersRef.current = {};
     setTypingUsers({});
 
-    setMessages([]);
+    const cid = String(conversationId);
+    setMessageState({ conversationId: cid, items: [] });
     setLoadingMore(false);
     setHasMore(true);
     setNextCursor(null);
     pendingGetMessagesKindRef.current = {};
+
     requestMessagesPage({ kind: "replace" });
   }, [conversationId, requestMessagesPage]);
+
+  useEffect(() => {
+    if (!otherUserId) return;
+    presenceUsers({ userIds: [otherUserId] });
+  }, [otherUserId]);
 
   const onLoadMore = useCallback(() => {
     if (loadingMore) return;
@@ -301,8 +356,7 @@ const Conversation = () => {
   const onPickFile = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      // allowsEditing: true,
-      aspect: [4, 3],
+      allowsEditing: true,
       quality: 1,
     });
 
@@ -320,6 +374,7 @@ const Conversation = () => {
       if (isTypingRef.current) {
         typing({ conversationId, isTyping: false });
         isTypingRef.current = false;
+        lastTypingEmitAtRef.current = 0;
       }
       if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
 
@@ -368,6 +423,7 @@ const Conversation = () => {
       if (isTypingRef.current) {
         typing({ conversationId, isTyping: false });
         isTypingRef.current = false;
+        lastTypingEmitAtRef.current = 0;
       }
       return;
     }
@@ -375,6 +431,14 @@ const Conversation = () => {
     if (!isTypingRef.current && text.trim().length > 0) {
       typing({ conversationId, isTyping: true });
       isTypingRef.current = true;
+      lastTypingEmitAtRef.current = Date.now();
+    } else if (isTypingRef.current) {
+      // Keep-alive: receivers drop typing after a timeout, so re-emit while user keeps typing.
+      const now = Date.now();
+      if (now - lastTypingEmitAtRef.current >= 1200) {
+        typing({ conversationId, isTyping: true });
+        lastTypingEmitAtRef.current = now;
+      }
     }
 
     if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
@@ -382,6 +446,7 @@ const Conversation = () => {
       if (isTypingRef.current) {
         typing({ conversationId, isTyping: false });
         isTypingRef.current = false;
+        lastTypingEmitAtRef.current = 0;
       }
     }, 800);
   };
@@ -394,6 +459,22 @@ const Conversation = () => {
     return `${names[0]} and others are typing...`;
   })();
 
+  const statusLine = (() => {
+    if (typingLabel) return typingLabel;
+    if (isDirect) {
+      if (isOtherOnline) return "Online";
+      if (otherLastSeen) return `Last seen ${moment(otherLastSeen).fromNow()}`;
+      return "Offline";
+    }
+    return "";
+  })();
+
+  const subtitleLine = (() => {
+    if (conversationUsername && statusLine)
+      return `${conversationUsername} • ${statusLine}`;
+    return conversationUsername || statusLine || "";
+  })();
+
   type TypingListItem = {
     id: string;
     kind: "typing";
@@ -401,9 +482,20 @@ const Conversation = () => {
   type ConversationListItem = MessageProps | TypingListItem;
 
   const listData: ConversationListItem[] = useMemo(() => {
-    if (!typingLabel) return messages;
-    return [{ id: `typing-${String(conversationId ?? "")}`, kind: "typing" }, ...messages];
-  }, [messages, typingLabel, conversationId]);
+    const cid = conversationId ? String(conversationId) : null;
+    const items = messageState.conversationId === cid ? messageState.items : [];
+
+    if (!typingLabel) return items;
+    return [
+      { id: `typing-${String(conversationId ?? "")}`, kind: "typing" },
+      ...items,
+    ];
+  }, [
+    messageState.conversationId,
+    messageState.items,
+    typingLabel,
+    conversationId,
+  ]);
 
   const isTypingItem = (item: ConversationListItem): item is TypingListItem => {
     return (item as TypingListItem).kind === "typing";
@@ -443,7 +535,7 @@ const Conversation = () => {
                   color={colors.neutral200}
                   textProps={{ numberOfLines: 1 }}
                 >
-                  {conversationUsername || ""}
+                  {subtitleLine}
                 </Typo>
               </View>
             </View>
@@ -480,10 +572,7 @@ const Conversation = () => {
             renderItem={({ item }) => {
               if (isTypingItem(item)) {
                 return (
-                  <TypingMessageItem
-                    label={typingLabel}
-                    isDirect={isDirect}
-                  />
+                  <TypingMessageItem label={typingLabel} isDirect={isDirect} />
                 );
               }
               return <MessageItem item={item} isDirect={isDirect} />;

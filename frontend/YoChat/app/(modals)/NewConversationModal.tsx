@@ -25,6 +25,7 @@ import Button from "@/components/Button";
 import { verticalScale } from "@/utils/styling";
 import {
   getContacts,
+  getConversations,
   newConversation,
   presenceGet,
   presenceInit,
@@ -450,6 +451,7 @@ const NewConversationModal = () => {
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
+  const [recentConversations, setRecentConversations] = useState<any[]>([]);
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>(
     [],
   );
@@ -461,13 +463,16 @@ const NewConversationModal = () => {
 
   useEffect(() => {
     getContacts(processGetContacts);
+    getConversations(processGetConversations);
     newConversation(processNewConversation);
     presenceInit(processPresenceInit);
     presenceUpdate(processPresenceUpdate);
     presenceGet();
     getContacts(null);
+    getConversations(null);
     return () => {
       getContacts(processGetContacts, true);
+      getConversations(processGetConversations, true);
       newConversation(processNewConversation, true);
       presenceInit(processPresenceInit, true);
       presenceUpdate(processPresenceUpdate, true);
@@ -475,7 +480,9 @@ const NewConversationModal = () => {
   }, []);
 
   const processGetContacts = (res: any) => {
-    if (res.success) setContacts(res.data);
+    if (res.success) {
+      setContacts(res.data);
+    }
   };
 
   const processNewConversation = (res: any) => {
@@ -495,6 +502,10 @@ const NewConversationModal = () => {
     } else {
       Alert.alert("Error", res.msg);
     }
+  };
+
+  const processGetConversations = (res: any) => {
+    if (res.success) setRecentConversations(res.data || []);
   };
 
   const processPresenceInit = (res: any) => {
@@ -590,15 +601,20 @@ const NewConversationModal = () => {
     const id = setTimeout(async () => {
       try {
         const users = await searchUsers(token, trimmed);
+        const currentId = currentUser?.id ? String(currentUser.id) : "";
+
         setSearchResults(
-          users.map((u) => ({
-            id: u._id,
-            name: u.name,
-            avatar: u.avatar,
-            username: u.username,
-            online: u.online,
-            lastSeen: u.lastSeen,
-          })),
+          (users || [])
+            .filter((u: any) => String(u?._id || "") !== currentId)
+            .slice(0, 8)
+            .map((u: any) => ({
+              id: u._id,
+              name: u.name,
+              avatar: u.avatar,
+              username: u.username,
+              online: u.online,
+              lastSeen: u.lastSeen,
+            })),
         );
       } catch (err: any) {
         console.log("searchUsers error:", err?.response?.data || err.message);
@@ -607,7 +623,7 @@ const NewConversationModal = () => {
       }
     }, 400);
     return () => clearTimeout(id);
-  }, [query, token]);
+  }, [query, token, currentUser?.id]);
 
   const data = query.trim() ? searchResults : contacts;
 
@@ -621,6 +637,35 @@ const NewConversationModal = () => {
   };
 
   const allData = [...contacts, ...searchResults];
+
+  const recentUsers = React.useMemo(() => {
+    if (isGroupMode) return [];
+    if (query.trim()) return [];
+    if (!currentUser?.id) return [];
+    const seen = new Set<string>();
+    const out: any[] = [];
+
+    (recentConversations || [])
+      .filter((c: any) => c?.type === "direct")
+      .forEach((c: any) => {
+        const parts: any[] = Array.isArray(c?.participants) ? c.participants : [];
+        const other = parts.find(
+          (p: any) => String(p?._id) !== String(currentUser.id),
+        );
+        if (!other?._id) return;
+        const id = String(other._id);
+        if (seen.has(id)) return;
+        seen.add(id);
+        out.push({
+          id,
+          name: other?.name,
+          avatar: other?.avatar,
+          username: other?.username,
+        });
+      });
+
+    return out.slice(0, 8);
+  }, [currentUser?.id, isGroupMode, query, recentConversations]);
 
   const showCreateBtn = isGroupMode && selectedParticipants.length >= 2;
 
@@ -695,9 +740,11 @@ const NewConversationModal = () => {
             },
           ]}
         >
+          
+
           {data.length > 0 && (
             <SectionLabel
-              label={query.trim() ? "Search results" : "Contacts"}
+              label={query.trim() ? "Search results" : "Recents"}
               count={data.length}
             />
           )}

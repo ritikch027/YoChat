@@ -1,10 +1,43 @@
 import { API_URL } from "@/constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { io, Socket } from "socket.io-client";
+import { AppState, AppStateStatus } from "react-native";
 
 let socket: Socket | null = null;
+let appStateListenerInstalled = false;
+let lastAppState: AppStateStatus = AppState.currentState;
+
+function ensureAppStatePresenceListener() {
+  if (appStateListenerInstalled) return;
+  appStateListenerInstalled = true;
+
+  AppState.addEventListener("change", async (nextState) => {
+    const prev = lastAppState;
+    lastAppState = nextState;
+
+    if (nextState !== "active") {
+      if (socket) {
+        try {
+          socket.disconnect();
+        } catch {}
+        socket = null;
+      }
+      return;
+    }
+
+    // App becomes active again: reconnect if we have auth.
+    if (prev !== "active") {
+      try {
+        await connectSocket();
+      } catch {
+        // ignore (e.g. signed out)
+      }
+    }
+  });
+}
 
 export async function connectSocket(): Promise<Socket> {
+  ensureAppStatePresenceListener();
   const token = await AsyncStorage.getItem("token");
 
   if (!token) {

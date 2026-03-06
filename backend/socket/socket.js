@@ -1,14 +1,14 @@
 import dotenv from "dotenv";
 import { Server as SocketIOServer, Socket } from "socket.io";
 import jwt from "jsonwebtoken";
-import { registerUserEvents } from "./userEvents.js";
 import Conversation from "../models/Conversation.js";
-import { registerChatEvents } from "./chatEvents.js";
+import { registerUserEvents } from "./controllers/user.controller.js";
+import { registerConversationEvents } from "./controllers/conversation.controller.js";
+import { registerMessageEvents } from "./controllers/message.controller.js";
 import {
-  getOnlineUserIds,
-  noteUserConnected,
-  noteUserDisconnected,
-} from "./presenceStore.js";
+  registerPresenceOnConnect,
+  registerPresenceOnDisconnect,
+} from "./controllers/presence.controller.js";
 
 dotenv.config();
 
@@ -17,6 +17,9 @@ export function initializeSocket(server) {
     cors: {
       origin: "*",
     },
+    // Helps detect "app killed / network lost" faster on mobile.
+    pingInterval: 10000,
+    pingTimeout: 5000,
   });
 
   //auth middlewares
@@ -46,22 +49,10 @@ export function initializeSocket(server) {
 
     console.log(`user connected: ${userId},username:${socket.data.name}`);
 
-    // Presence: increment connection count and broadcast online.
-    const presence = noteUserConnected(userId);
-    socket.emit("presenceInit", { onlineUserIds: getOnlineUserIds() });
-    io.emit("presenceUpdate", {
-      userId: String(userId),
-      online: presence.online,
-      lastSeen: presence.lastSeen,
-    });
-
-    // Allow clients to request a fresh presence snapshot (screens may mount later).
-    socket.on("presenceGet", () => {
-      socket.emit("presenceInit", { onlineUserIds: getOnlineUserIds() });
-    });
-
+    registerPresenceOnConnect(io, socket);
     registerUserEvents(io, socket);
-    registerChatEvents(io, socket);
+    registerConversationEvents(io, socket);
+    registerMessageEvents(io, socket);
 
     //join all the conversations the user is part of
     try {
@@ -78,15 +69,7 @@ export function initializeSocket(server) {
 
     socket.on("disconnect", () => {
       console.log(`user disconnected: ${userId}`);
-      noteUserDisconnected(userId)
-        .then((p) => {
-          io.emit("presenceUpdate", {
-            userId: String(userId),
-            online: p.online,
-            lastSeen: p.lastSeen,
-          });
-        })
-        .catch(() => {});
+      registerPresenceOnDisconnect(io, userId);
     });
   });
 

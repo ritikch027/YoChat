@@ -158,6 +158,22 @@ export const presenceGet = () => {
   socket.emit("presenceGet");
 };
 
+export const presenceUsers = (payload: any, off: boolean = false) => {
+  const socket = getSocket();
+  if (!socket) {
+    console.log("socket is not connected");
+    return;
+  }
+
+  if (off) {
+    socket.off("presenceUsers", payload);
+  } else if (typeof payload == "function") {
+    socket.on("presenceUsers", payload);
+  } else {
+    socket.emit("presenceGetUsers", payload);
+  }
+};
+
 export const typing = (payload: any, off: boolean = false) => {
   const socket = getSocket();
   if (!socket) {

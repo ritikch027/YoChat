@@ -46,9 +46,6 @@ const ProfileModal = () => {
   }, []);
 
   const processUpdateProfile = (res: any) => {
-    // console.log("got res: ", res);
-    // setLoading(false);
-
     if (res.success) {
       updateToken(res.data?.token);
       router.back();
@@ -61,6 +58,7 @@ const ProfileModal = () => {
       name: user?.name || "",
       email: user?.email || "",
       avatar: user?.avatar,
+      username: user?.username || "",
     });
   }, [user]);
 
@@ -182,28 +180,32 @@ const ProfileModal = () => {
                 // editable={false}
               />
             </View>
-            {/* <View style={styles.inputContainer}>
-              <Typo style={{ paddingLeft: spacingX._10 }}>Username</Typo>
+            <View style={styles.inputContainer}>
+              <Typo style={{ paddingLeft: spacingX._10 }}>
+                Username{" "}
+                <Typo size={11} color="gray">
+                  (Tap to edit)
+                </Typo>
+              </Typo>
 
-              <Input
-                value={userData.username}
-                containerStyle={{
-                  borderColor: colors.neutral350,
-                  paddingLeft: spacingX._20,
-                }}
-                onChangeText={(value) =>
-                  setUserData({ ...userData, username: value })
-                }
-                editable={true}
-              />
-            </View> */}
-            <Pressable
-              onPress={() => router.push("../(main)/username")}
-              style={{ paddingVertical: 12 }}
-            >
-              <Text>Username</Text>
-              {user?.username && <Text>@{user.username}</Text>}
-            </Pressable>
+              <TouchableOpacity
+                activeOpacity={1}
+                onPress={() => router.push("../(main)/username")}
+              >
+                <Input
+                  value={userData?.username}
+                  containerStyle={{
+                    borderColor: colors.neutral350,
+                    paddingLeft: spacingX._20,
+                    backgroundColor: colors.neutral300,
+                  }}
+                  onChangeText={(value) =>
+                    setUserData({ ...userData, username: value })
+                  }
+                  editable={false}
+                />
+              </TouchableOpacity>
+            </View>
           </View>
         </ScrollView>
       </View>
