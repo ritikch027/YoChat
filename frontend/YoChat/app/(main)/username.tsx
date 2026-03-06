@@ -11,6 +11,10 @@ import {
 import { useAuth } from "../../contexts/authContext"; // adjust path if different
 import { checkUsername, updateMyUsername } from "@/services/usernameService";
 import { useRouter } from "expo-router";
+import {
+  SafeAreaView,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
 const DEBOUNCE_MS = 400;
 
@@ -33,10 +37,15 @@ export default function UsernameScreen() {
       return;
     }
 
-    setStatus("checking");
-    setMessage("Checking username…");
-
     const id = setTimeout(async () => {
+      if (value === user?.username) {
+        setStatus("idle");
+        setMessage("Edit Your Username");
+        return;
+      }
+      setStatus("checking");
+      setMessage("Checking username…");
+
       try {
         const res = await checkUsername(value);
         const current = user?.username?.toLowerCase();
@@ -93,17 +102,18 @@ export default function UsernameScreen() {
   };
 
   const disabled =
-    saving || (value !== "" && (status === "taken" || status === "invalid"));
-
+    saving ||
+    (value !== "" && (status === "taken" || status === "invalid")) ||
+    value === user?.username;
+  const insets = useSafeAreaInsets();
   return (
-    <View style={{ flex: 1, padding: 20, gap: 12 }}>
+    <View style={{ flex: 1, padding: 20, gap: 12, marginTop: insets.top }}>
       <Text style={{ fontSize: 20, fontWeight: "600", marginBottom: 4 }}>
         Username
       </Text>
 
       <Text style={{ color: "#666", marginBottom: 10 }}>
-        This is your public YoChat handle. Others can find you by this instead
-        of your email.
+        This is your public YoChat Username. Your friends can find you by this.
       </Text>
 
       <View
@@ -150,11 +160,9 @@ export default function UsernameScreen() {
       </Pressable>
 
       <Text style={{ marginTop: 16, fontSize: 12, color: "#888" }}>
-        Your profile link will be:
+        Share this to connect with your friends and family.
         {"\n"}
-        <Text style={{ fontWeight: "500" }}>
-          https://yochat.app/@{value || "yourname"}
-        </Text>
+        
       </Text>
     </View>
   );

@@ -4,6 +4,7 @@ import { useRouter } from "expo-router";
 import {
   createContext,
   ReactNode,
+  useRef,
   useContext,
   useEffect,
   useState,
@@ -25,10 +26,52 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const [token, setToken] = useState<string | null>(null);
   const [user, setUser] = useState<UserProps | null>(null);
   const router = useRouter();
+  const refreshTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
     loadToken();
+    return () => {
+      const t = refreshTimerRef.current;
+      if (t) clearTimeout(t);
+      refreshTimerRef.current = null;
+    };
   }, []);
+
+  const clearRefreshTimer = () => {
+    const t = refreshTimerRef.current;
+    if (t) clearTimeout(t);
+    refreshTimerRef.current = null;
+  };
+
+  const scheduleAccessTokenRefresh = async (nextToken: string) => {
+    clearRefreshTimer();
+
+    let decoded: DecodedTokenProps | null = null;
+    try {
+      decoded = jwtDecode<DecodedTokenProps>(nextToken);
+    } catch {
+      decoded = null;
+    }
+
+    const expSeconds = decoded?.exp ? Number(decoded.exp) : NaN;
+    if (!Number.isFinite(expSeconds)) return;
+
+    const refreshAtMs = expSeconds * 1000 - 60_000; // refresh 60s before expiry
+    const delayMs = Math.max(5_000, refreshAtMs - Date.now());
+
+    refreshTimerRef.current = setTimeout(async () => {
+      try {
+        const refreshToken = await AsyncStorage.getItem("refreshToken");
+        if (!refreshToken) throw new Error("Missing refresh token");
+        const refreshed = await refresh(refreshToken);
+        await updateTokens(refreshed.token, refreshed.refreshToken);
+      } catch {
+        await clearStoredAuth();
+        disconnectSocket();
+        gotoWelcomePage();
+      }
+    }, delayMs);
+  };
 
   const clearStoredAuth = async () => {
     await AsyncStorage.removeItem("token");
@@ -61,9 +104,8 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
             return;
           }
         }
-        setToken(storedToken);
+        await updateTokens(storedToken, storedRefreshToken || undefined);
         await connectSocket();
-        setUser(decoded.user);
         gotoHomePage();
       } catch (error) {
         await clearStoredAuth();
@@ -94,6 +136,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
 
     const decoded = jwtDecode<DecodedTokenProps>(token);
     setUser(decoded.user);
+    await scheduleAccessTokenRefresh(token);
   };
 
   const signIn = async (email: string, password: string) => {
@@ -118,6 +161,7 @@ export const AuthProvider = ({ children }: { children: ReactNode }) => {
   const signOut = async () => {
     setToken(null);
     setUser(null);
+    clearRefreshTimer();
     await clearStoredAuth();
     disconnectSocket();
     router.replace("/(auth)/Welcome");

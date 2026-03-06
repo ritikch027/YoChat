@@ -65,9 +65,9 @@ const ProfileModal = () => {
   const onPickImage = async () => {
     let result = await ImagePicker.launchImageLibraryAsync({
       mediaTypes: ["images"],
-      // allowsEditing: true,
-      aspect: [4, 3],
-      quality: 0.75,
+      allowsEditing: true,
+      aspect: [1, 1],
+      quality: 1,
     });
 
     console.log(result);
@@ -76,6 +76,8 @@ const ProfileModal = () => {
       setUserData({ ...userData, avatar: result.assets[0] });
     }
   };
+
+ 
 
   const showLogoutAlert = () => {
     Alert.alert("Confirm", "Are you sure you want to logout?", [
@@ -134,7 +136,7 @@ const ProfileModal = () => {
         {/* form */}
         <ScrollView contentContainerStyle={styles.form}>
           <View style={styles.avatarContainer}>
-            <Avatar uri={userData.avatar} size={170} />
+              <Avatar uri={userData.avatar} size={170} />
             <TouchableOpacity
               style={styles.editIcon}
               activeOpacity={0.7}

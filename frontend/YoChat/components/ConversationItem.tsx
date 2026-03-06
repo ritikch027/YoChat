@@ -59,6 +59,14 @@ const ConversationItem = ({
     });
   };
 
+ const openAvatar = () => {
+    if (!avatar) return;
+    router.push({
+      pathname: "/(modals)/attachment",
+      params: { uri: String(avatar) },
+    });
+  }; 
+
   return (
     <View>
       <TouchableOpacity
@@ -66,13 +74,9 @@ const ConversationItem = ({
         style={styles.conversationItem}
         onPress={openConversation}
       >
-        <View>
-          <Avatar
-            uri={avatar}
-            size={47}
-            isGroup={item.type == "group"}
-          ></Avatar>
-        </View>
+        <TouchableOpacity activeOpacity={0.85} onPress={openAvatar}>
+          <Avatar uri={avatar} size={47} isGroup={item.type == "group"} />
+        </TouchableOpacity>
         <View style={{ flex: 1 }}>
           <View style={styles.row}>
             <Typo size={17} fontWeight={"500"}>

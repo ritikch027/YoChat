@@ -18,7 +18,7 @@ import * as Icons from "phosphor-react-native";
 import ScreenWrapper from "@/components/ScreenWrapper";
 import Typo from "@/components/Typo";
 import { colors, radius, spacingX, spacingY } from "@/constants/theme";
-import { useLocalSearchParams } from "expo-router";
+import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAuth } from "@/contexts/authContext";
 import { scale, verticalScale } from "@/utils/styling";
 import Header from "@/components/Header";
@@ -45,6 +45,7 @@ import moment from "moment";
 
 const Conversation = () => {
   const { user: currentUser } = useAuth();
+  const router = useRouter();
   const {
     id: conversationId,
     name,
@@ -58,6 +59,7 @@ const Conversation = () => {
   }>({ conversationId: null, items: [] });
   const [message, setMessage] = useState("");
   const [loading, setLoading] = useState(false);
+  const [loadingMessages, setLoadingMessages] = useState(false);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [nextCursor, setNextCursor] = useState<string | null>(null);
@@ -78,6 +80,7 @@ const Conversation = () => {
   const pendingGetMessagesKindRef = useRef<
     Record<string, "replace" | "append">
   >({});
+  const loadingMessagesForRef = useRef<string | null>(null);
 
   useEffect(() => {
     conversationIdRef.current = conversationId ? String(conversationId) : null;
@@ -217,7 +220,7 @@ const Conversation = () => {
         });
       }
     } else {
-      Alert.alert("Error", res.msg);
+      Alert.alert("Error", res.message);
     }
   }, []);
 
@@ -228,6 +231,14 @@ const Conversation = () => {
       : "replace";
 
     if (requestId) delete pendingGetMessagesKindRef.current[requestId];
+
+    if (kind === "replace") {
+      // Only end the "initial load" spinner for the latest replace request.
+      if (!loadingMessagesForRef.current || loadingMessagesForRef.current === requestId) {
+        setLoadingMessages(false);
+        loadingMessagesForRef.current = null;
+      }
+    }
 
     if (res.success) {
       const page = Array.isArray(res.data) ? (res.data as MessageProps[]) : [];
@@ -260,6 +271,7 @@ const Conversation = () => {
             : null,
       );
     } else {
+      if (kind === "replace") setLoadingMessages(false);
       setLoadingMore(false);
     }
   }, []);
@@ -271,6 +283,10 @@ const Conversation = () => {
 
       const requestId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
       pendingGetMessagesKindRef.current[requestId] = opts.kind;
+      if (opts.kind === "replace") {
+        loadingMessagesForRef.current = requestId;
+        setLoadingMessages(true);
+      }
 
       getMessages({
         conversationId: activeConversationId,
@@ -331,13 +347,42 @@ const Conversation = () => {
 
     const cid = String(conversationId);
     setMessageState({ conversationId: cid, items: [] });
+    setLoadingMessages(true);
     setLoadingMore(false);
     setHasMore(true);
     setNextCursor(null);
     pendingGetMessagesKindRef.current = {};
+    loadingMessagesForRef.current = null;
 
     requestMessagesPage({ kind: "replace" });
   }, [conversationId, requestMessagesPage]);
+
+  const MessagesSkeleton = () => {
+    const items = Array.from({ length: 8 }).map((_, idx) => idx);
+    return (
+      <View style={styles.skeletonWrap}>
+        {items.map((i) => {
+          const isMine = i % 3 === 0;
+          return (
+            <View
+              key={i}
+              style={[
+                styles.skeletonRow,
+                { justifyContent: isMine ? "flex-end" : "flex-start" },
+              ]}
+            >
+              <View
+                style={[
+                  styles.skeletonBubble,
+                  isMine ? styles.skeletonMine : styles.skeletonOther,
+                ]}
+              />
+            </View>
+          );
+        })}
+      </View>
+    );
+  };
 
   useEffect(() => {
     if (!otherUserId) return;
@@ -470,10 +515,54 @@ const Conversation = () => {
   })();
 
   const subtitleLine = (() => {
+    if (type === "group") return `${participants.length} members`;
     if (conversationUsername && statusLine)
       return `${conversationUsername} • ${statusLine}`;
     return conversationUsername || statusLine || "";
   })();
+
+  const onPressHeaderDetails = useCallback(() => {
+    if (isDirect) {
+      if (!otherUserId) return;
+      router.push({
+        pathname: "/(main)/user/[id]",
+        params: {
+          id: otherUserId,
+          name: conversationName,
+          username: otherParticipant?.username ?? "",
+          email: otherParticipant?.email ?? "",
+          avatar: conversationAvatar ?? "",
+          online: isOtherOnline ? "1" : "0",
+          lastSeen: otherLastSeen ? moment(otherLastSeen).fromNow() : "",
+        },
+      });
+      return;
+    }
+
+    const cid = conversationId ? String(conversationId) : "";
+    if (!cid) return;
+    router.push({
+      pathname: "/(main)/group/[id]",
+      params: {
+        id: cid,
+        name: conversationName,
+        avatar: conversationAvatar ?? "",
+        participants: JSON.stringify(participants),
+      },
+    });
+  }, [
+    conversationAvatar,
+    conversationId,
+    conversationName,
+    isDirect,
+    isOtherOnline,
+    otherLastSeen,
+    otherParticipant?.email,
+    otherParticipant?.username,
+    otherUserId,
+    participants,
+    router,
+  ]);
 
   type TypingListItem = {
     id: string;
@@ -513,37 +602,43 @@ const Conversation = () => {
           leftIcon={
             <View style={styles.headerLeft}>
               <BackButton />
-              <View style={styles.headerAvatarWrap}>
-                <Avatar
-                  size={40}
-                  uri={conversationAvatar as string}
-                  isGroup={String(type) === "group"}
-                />
-                {isOtherOnline && <View style={styles.onlineDot} />}
-              </View>
-              <View style={{ flex: 1 }}>
-                <Typo
-                  color={colors.white}
-                  size={22}
-                  fontWeight={"400"}
-                  textProps={{ numberOfLines: 1 }}
-                >
-                  {conversationName}
-                </Typo>
-                <Typo
-                  size={13}
-                  color={colors.neutral200}
-                  textProps={{ numberOfLines: 1 }}
-                >
-                  {subtitleLine}
-                </Typo>
-              </View>
+              <TouchableOpacity
+                activeOpacity={0.8}
+                style={styles.headerDetailsTap}
+                onPress={onPressHeaderDetails}
+              >
+                <View style={styles.headerAvatarWrap}>
+                  <Avatar
+                    size={40}
+                    uri={conversationAvatar as string}
+                    isGroup={String(type) === "group"}
+                  />
+                  {isOtherOnline && <View style={styles.onlineDot} />}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Typo
+                    color={colors.white}
+                    size={20}
+                    fontWeight={"400"}
+                    textProps={{ numberOfLines: 1 }}
+                  >
+                    {conversationName}
+                  </Typo>
+                  <Typo
+                    size={13}
+                    color={colors.neutral200}
+                    textProps={{ numberOfLines: 1 }}
+                  >
+                    {subtitleLine}
+                  </Typo>
+                </View>
+              </TouchableOpacity>
             </View>
           }
           rightIcon={
             <TouchableOpacity
               activeOpacity={0.7}
-              // style={{ marginBottom: verticalScale(7) }}
+              style={{ marginBottom: verticalScale(7) }}
             >
               <Icons.DotsThreeOutlineVerticalIcon
                 weight="fill"
@@ -555,30 +650,34 @@ const Conversation = () => {
 
         {/* messages */}
         <View style={styles.content}>
-          <FlatList
-            data={listData}
-            inverted={true}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={styles.messagesContent}
-            onEndReached={onLoadMore}
-            onEndReachedThreshold={0.2}
-            ListFooterComponent={
-              loadingMore ? (
-                <View style={{ paddingVertical: spacingY._10 }}>
-                  <Loading size="small" color={colors.black} />
-                </View>
-              ) : null
-            }
-            renderItem={({ item }) => {
-              if (isTypingItem(item)) {
-                return (
-                  <TypingMessageItem label={typingLabel} isDirect={isDirect} />
-                );
+          {loadingMessages && messageState.items.length === 0 ? (
+            <MessagesSkeleton />
+          ) : (
+            <FlatList
+              data={listData}
+              inverted={true}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.messagesContent}
+              onEndReached={onLoadMore}
+              onEndReachedThreshold={0.2}
+              ListFooterComponent={
+                loadingMore ? (
+                  <View style={{ paddingVertical: spacingY._10 }}>
+                    <Loading size="small" color={colors.black} />
+                  </View>
+                ) : null
               }
-              return <MessageItem item={item} isDirect={isDirect} />;
-            }}
-            keyExtractor={(item) => item.id}
-          />
+              renderItem={({ item }) => {
+                if (isTypingItem(item)) {
+                  return (
+                    <TypingMessageItem label={typingLabel} isDirect={isDirect} />
+                  );
+                }
+                return <MessageItem item={item} isDirect={isDirect} />;
+              }}
+              keyExtractor={(item) => item.id}
+            />
+          )}
 
           <View style={styles.footer}>
             <Input
@@ -648,6 +747,12 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacingX._12,
   },
+  headerDetailsTap: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacingX._12,
+  },
   headerAvatarWrap: { position: "relative" },
   onlineDot: {
     position: "absolute",
@@ -700,6 +805,29 @@ const styles = StyleSheet.create({
     paddingTop: spacingY._20,
     paddingBottom: spacingY._10,
     gap: spacingY._12,
+  },
+  skeletonWrap: {
+    flex: 1,
+    justifyContent: "flex-end",
+    paddingTop: spacingY._20,
+    paddingBottom: spacingY._10,
+    gap: spacingY._12,
+  },
+  skeletonRow: {
+    flexDirection: "row",
+  },
+  skeletonBubble: {
+    height: verticalScale(26),
+    borderRadius: radius._15,
+    backgroundColor: colors.neutral100,
+  },
+  skeletonMine: {
+    width: "55%",
+    backgroundColor: colors.neutral200,
+  },
+  skeletonOther: {
+    width: "70%",
+    backgroundColor: colors.neutral100,
   },
   plusIcon: {
     backgroundColor: colors.primary,

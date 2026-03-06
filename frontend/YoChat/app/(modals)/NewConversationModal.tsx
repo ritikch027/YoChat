@@ -24,7 +24,6 @@ import { useAuth } from "@/contexts/authContext";
 import Button from "@/components/Button";
 import { verticalScale } from "@/utils/styling";
 import {
-  getContacts,
   getConversations,
   newConversation,
   presenceGet,
@@ -158,11 +157,11 @@ const sb = StyleSheet.create({
 // ─── Chip row for selected participants ───────────────────────────────────────
 const SelectedChips = ({
   participants,
-  contacts,
+  userById,
   onRemove,
 }: {
   participants: string[];
-  contacts: any[];
+  userById: Record<string, any>;
   onRemove: (id: string) => void;
 }) => {
   if (participants.length === 0) return null;
@@ -170,11 +169,11 @@ const SelectedChips = ({
     <ScrollView
       horizontal
       showsHorizontalScrollIndicator={false}
-      style={{ marginBottom: 12 }}
+      style={{ marginBottom: 8, maxHeight: 50 }}
       contentContainerStyle={{ gap: 8, paddingHorizontal: 2 }}
     >
       {participants.map((id) => {
-        const user = contacts.find((c: any) => c.id === id);
+        const user = userById[String(id)];
         return (
           <TouchableOpacity
             key={id}
@@ -199,6 +198,7 @@ const chip = StyleSheet.create({
     alignItems: "center",
     backgroundColor: PALETTE.primaryLight,
     borderRadius: 20,
+    maxHeight: 40,
     paddingHorizontal: 10,
     paddingVertical: 5,
     gap: 6,
@@ -373,12 +373,12 @@ const EmptyState = ({ query }: { query: string }) => (
       <Text style={es.emoji}>{query ? "🔍" : "👥"}</Text>
     </View>
     <Text style={es.title}>
-      {query ? "No results found" : "No contacts yet"}
+      {query ? "No results found" : "No recent chats yet"}
     </Text>
     <Text style={es.sub}>
       {query
         ? `Try searching for a different name or @username`
-        : `Search for people to start a conversation`}
+        : `Search to start a new conversation`}
     </Text>
   </View>
 );
@@ -447,13 +447,15 @@ const NewConversationModal = () => {
 
   const [groupAvatar, setGroupAvatar] = useState<{ uri: string } | null>(null);
   const [groupName, setGroupName] = useState("");
-  const [contacts, setContacts] = useState([]);
   const [query, setQuery] = useState("");
   const [searchResults, setSearchResults] = useState<any[]>([]);
   const [searchLoading, setSearchLoading] = useState(false);
   const [recentConversations, setRecentConversations] = useState<any[]>([]);
   const [selectedParticipants, setSelectedParticipants] = useState<string[]>(
     [],
+  );
+  const [selectedUserById, setSelectedUserById] = useState<Record<string, any>>(
+    {},
   );
   const [isLoading, setIsLoading] = useState(false);
   const [presence, setPresence] = useState<
@@ -462,28 +464,19 @@ const NewConversationModal = () => {
   const { user: currentUser, token } = useAuth();
 
   useEffect(() => {
-    getContacts(processGetContacts);
     getConversations(processGetConversations);
     newConversation(processNewConversation);
     presenceInit(processPresenceInit);
     presenceUpdate(processPresenceUpdate);
     presenceGet();
-    getContacts(null);
     getConversations(null);
     return () => {
-      getContacts(processGetContacts, true);
       getConversations(processGetConversations, true);
       newConversation(processNewConversation, true);
       presenceInit(processPresenceInit, true);
       presenceUpdate(processPresenceUpdate, true);
     };
   }, []);
-
-  const processGetContacts = (res: any) => {
-    if (res.success) {
-      setContacts(res.data);
-    }
-  };
 
   const processNewConversation = (res: any) => {
     setIsLoading(false);
@@ -500,7 +493,7 @@ const NewConversationModal = () => {
         },
       });
     } else {
-      Alert.alert("Error", res.msg);
+      Alert.alert("Error", res.message);
     }
   };
 
@@ -532,11 +525,19 @@ const NewConversationModal = () => {
   };
 
   const toggleParticipant = (user: any) => {
-    setSelectedParticipants((prev) =>
-      prev.includes(user.id)
-        ? prev.filter((id) => id !== user.id)
-        : [...prev, user.id],
-    );
+    const userId = String(user?.id || "");
+    if (!userId) return;
+
+    setSelectedParticipants((prev) => {
+      const isSelected = prev.includes(userId);
+      setSelectedUserById((prevUsers) => {
+        const next = { ...prevUsers };
+        if (isSelected) delete next[userId];
+        else next[userId] = user;
+        return next;
+      });
+      return isSelected ? prev.filter((id) => id !== userId) : [...prev, userId];
+    });
   };
 
   const onSelectUser = (user: any) => {
@@ -625,7 +626,59 @@ const NewConversationModal = () => {
     return () => clearTimeout(id);
   }, [query, token, currentUser?.id]);
 
-  const data = query.trim() ? searchResults : contacts;
+  const recentChatUsers = React.useMemo(() => {
+    if (!currentUser?.id) return [];
+    const currentId = String(currentUser.id);
+
+    const bestByUserId = new Map<
+      string,
+      {
+        id: string;
+        name: string;
+        avatar: string | null;
+        username?: string | null;
+        online?: boolean;
+        lastSeen?: string | null;
+        lastChatAt: number;
+      }
+    >();
+
+    (recentConversations || []).forEach((c: any) => {
+      // Only use direct conversations for the "recent chats" user list.
+      // Otherwise a single group chat would expand into many unrelated users.
+      if (String(c?.type) !== "direct") return;
+      const parts: any[] = Array.isArray(c?.participants) ? c.participants : [];
+      const updatedAt =
+        (c?.lastMessage?.createdAt && Date.parse(String(c.lastMessage.createdAt))) ||
+        (c?.updatedAt && Date.parse(String(c.updatedAt))) ||
+        (c?.createdAt && Date.parse(String(c.createdAt))) ||
+        0;
+
+      parts.forEach((p: any) => {
+        const id = String(p?._id || p?.id || "");
+        if (!id || id === currentId) return;
+
+        const prev = bestByUserId.get(id);
+        if (!prev || updatedAt > prev.lastChatAt) {
+          bestByUserId.set(id, {
+            id,
+            name: String(p?.name || "User"),
+            avatar: p?.avatar ?? null,
+            username: p?.username ?? null,
+            online: p?.online,
+            lastSeen: p?.lastSeen ?? null,
+            lastChatAt: updatedAt,
+          });
+        }
+      });
+    });
+
+    return Array.from(bestByUserId.values()).sort(
+      (a, b) => b.lastChatAt - a.lastChatAt,
+    );
+  }, [currentUser?.id, recentConversations]);
+
+  const data = query.trim() ? searchResults : recentChatUsers;
 
   const getUserPresence = (user: any) => {
     const id = String(user?.id || "");
@@ -636,36 +689,18 @@ const NewConversationModal = () => {
     };
   };
 
-  const allData = [...contacts, ...searchResults];
-
-  const recentUsers = React.useMemo(() => {
-    if (isGroupMode) return [];
-    if (query.trim()) return [];
-    if (!currentUser?.id) return [];
-    const seen = new Set<string>();
-    const out: any[] = [];
-
-    (recentConversations || [])
-      .filter((c: any) => c?.type === "direct")
-      .forEach((c: any) => {
-        const parts: any[] = Array.isArray(c?.participants) ? c.participants : [];
-        const other = parts.find(
-          (p: any) => String(p?._id) !== String(currentUser.id),
-        );
-        if (!other?._id) return;
-        const id = String(other._id);
-        if (seen.has(id)) return;
-        seen.add(id);
-        out.push({
-          id,
-          name: other?.name,
-          avatar: other?.avatar,
-          username: other?.username,
-        });
-      });
-
-    return out.slice(0, 8);
-  }, [currentUser?.id, isGroupMode, query, recentConversations]);
+  const chipUserById = React.useMemo(() => {
+    const map: Record<string, any> = { ...selectedUserById };
+    recentChatUsers.forEach((u: any) => {
+      const id = String(u?.id || "");
+      if (id && !map[id]) map[id] = u;
+    });
+    searchResults.forEach((u: any) => {
+      const id = String(u?.id || "");
+      if (id && !map[id]) map[id] = u;
+    });
+    return map;
+  }, [recentChatUsers, searchResults, selectedUserById]);
 
   const showCreateBtn = isGroupMode && selectedParticipants.length >= 2;
 
@@ -674,6 +709,7 @@ const NewConversationModal = () => {
       <View style={s.container}>
         {/* ── Header ── */}
         <Header
+          style={{ marginVertical: 20 }}
           title={isGroupMode ? "New Group" : "New Message"}
           leftIcon={<BackButton color={PALETTE.black} />}
         />
@@ -715,10 +751,8 @@ const NewConversationModal = () => {
         {isGroupMode && (
           <SelectedChips
             participants={selectedParticipants}
-            contacts={allData}
-            onRemove={(id) =>
-              setSelectedParticipants((p) => p.filter((x) => x !== id))
-            }
+            userById={chipUserById}
+            onRemove={(id) => toggleParticipant({ id })}
           />
         )}
 
@@ -740,11 +774,9 @@ const NewConversationModal = () => {
             },
           ]}
         >
-          
-
           {data.length > 0 && (
             <SectionLabel
-              label={query.trim() ? "Search results" : "Recents"}
+              label={query.trim() ? "Search results" : "Recent chats"}
               count={data.length}
             />
           )}
@@ -806,7 +838,7 @@ const s = StyleSheet.create({
     backgroundColor: PALETTE.surface,
     borderRadius: 20,
     padding: 16,
-    marginBottom: 14,
+    marginBottom: 10,
     gap: 14,
     borderWidth: 1.5,
     borderColor: PALETTE.border,
@@ -832,12 +864,15 @@ const s = StyleSheet.create({
   },
   cameraEmoji: { fontSize: 12 },
   groupNameInput: {
+    height: 36,
     fontSize: 16,
     fontWeight: "700",
     color: PALETTE.black,
     borderBottomWidth: 2,
     borderBottomColor: PALETTE.primary,
-    paddingBottom: 4,
+    paddingVertical: 0,
+    textAlignVertical: "center",
+    includeFontPadding: false,
     marginBottom: 4,
   },
   groupHint: {
