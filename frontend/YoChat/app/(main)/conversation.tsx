@@ -70,6 +70,15 @@ const Conversation = () => {
   const [presence, setPresence] = useState<
     Record<string, { online: boolean; lastSeen?: string | null }>
   >({});
+  const [replyDraft, setReplyDraft] = useState<
+    | {
+        id: string;
+        senderName: string;
+        content: string;
+        attachment?: string | null;
+      }
+    | null
+  >(null);
   const isTypingRef = useRef(false);
   const lastTypingEmitAtRef = useRef(0);
   const typingStopTimerRef = useRef<any>(null);
@@ -344,6 +353,7 @@ const Conversation = () => {
     );
     remoteTypingTimersRef.current = {};
     setTypingUsers({});
+    setReplyDraft(null);
 
     const cid = String(conversationId);
     setMessageState({ conversationId: cid, items: [] });
@@ -356,6 +366,18 @@ const Conversation = () => {
 
     requestMessagesPage({ kind: "replace" });
   }, [conversationId, requestMessagesPage]);
+
+  const setReplyFromMessage = useCallback((m: MessageProps) => {
+    const senderName = m?.sender?.name ? String(m.sender.name) : "User";
+    const content = (m?.content || "").toString();
+    const attachment = m?.attachment ? String(m.attachment) : null;
+    setReplyDraft({
+      id: String(m.id),
+      senderName,
+      content,
+      attachment,
+    });
+  }, []);
 
   const MessagesSkeleton = () => {
     const items = Array.from({ length: 8 }).map((_, idx) => idx);
@@ -446,10 +468,12 @@ const Conversation = () => {
         },
         content: message?.trim(),
         attachment,
+        replyTo: replyDraft?.id || null,
       });
 
       setMessage("");
       setSelectedFile(null);
+      setReplyDraft(null);
     } catch (error) {
       console.log("Error seinding message", error);
       Alert.alert("Error", "Failed to send message");
@@ -673,13 +697,45 @@ const Conversation = () => {
                     <TypingMessageItem label={typingLabel} isDirect={isDirect} />
                   );
                 }
-                return <MessageItem item={item} isDirect={isDirect} />;
+                return (
+                  <MessageItem
+                    item={item}
+                    isDirect={isDirect}
+                    onReply={setReplyFromMessage}
+                  />
+                );
               }}
               keyExtractor={(item) => item.id}
             />
           )}
 
           <View style={styles.footer}>
+            {replyDraft && (
+              <View style={styles.replyBar}>
+                <View style={styles.replyAccent} />
+                <View style={{ flex: 1 }}>
+                  <Typo size={12} fontWeight={"700"} color={colors.neutral800}>
+                    Replying to {replyDraft.senderName}
+                  </Typo>
+                  <Typo
+                    size={12}
+                    color={colors.neutral600}
+                    textProps={{ numberOfLines: 1 }}
+                  >
+                    {replyDraft.attachment
+                      ? "Image"
+                      : replyDraft.content || "Message"}
+                  </Typo>
+                </View>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  onPress={() => setReplyDraft(null)}
+                  style={styles.replyClose}
+                >
+                  <Icons.XIcon size={14} weight="bold" color={colors.neutral700} />
+                </TouchableOpacity>
+              </View>
+            )}
             <Input
               value={message}
               onChangeText={onChangeMessage}
@@ -797,6 +853,30 @@ const styles = StyleSheet.create({
   footer: {
     paddingTop: spacingY._7,
     paddingBottom: verticalScale(22),
+  },
+  replyBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacingX._10,
+    paddingHorizontal: spacingX._12,
+    paddingVertical: spacingY._10,
+    borderRadius: radius._15,
+    backgroundColor: colors.neutral100,
+    marginBottom: spacingY._7,
+  },
+  replyAccent: {
+    width: 3,
+    height: "100%",
+    borderRadius: radius.full,
+    backgroundColor: colors.primaryDark,
+  },
+  replyClose: {
+    height: 28,
+    width: 28,
+    borderRadius: radius.full,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: colors.neutral200,
   },
   messagesContainer: {
     flex: 1,

@@ -149,6 +149,14 @@ export type MessageProps = {
   };
   content: string;
   attachment?: string | null;
+  replyTo?: string | null;
+  replySnapshot?: {
+    id: string;
+    senderName: string;
+    content: string;
+    attachment?: string;
+    createdAt?: string | null;
+  } | null;
   isMe?: boolean;
   createdAt: string;
 };

@@ -34,11 +34,37 @@ export function registerMessageEvents(io, socket) {
         return;
       }
 
+      let replyTo = null;
+      let replySnapshot = null;
+      const rawReplyTo = data?.replyTo ? String(data.replyTo) : "";
+      if (rawReplyTo && mongoose.Types.ObjectId.isValid(rawReplyTo)) {
+        const original = await Message.findOne({
+          _id: rawReplyTo,
+          conversationId,
+        })
+          .populate({ path: "senderId", select: "name" })
+          .lean();
+
+        if (original) {
+          replyTo = original._id;
+          const contentPreview = (original.content || "").toString().trim();
+          replySnapshot = {
+            id: String(original._id),
+            senderName: original.senderId?.name || "Unknown",
+            content: contentPreview.length > 140 ? `${contentPreview.slice(0, 140)}…` : contentPreview,
+            attachment: original.attachment ? String(original.attachment) : "",
+            createdAt: original.createdAt || null,
+          };
+        }
+      }
+
       const message = await Message.create({
         conversationId,
         senderId: userId,
         content: (data?.content || "").toString(),
         attachment: data?.attachment ? String(data.attachment) : "",
+        replyTo,
+        replySnapshot,
       });
 
       io.to(String(conversationId)).emit("newMessage", {
@@ -52,6 +78,8 @@ export function registerMessageEvents(io, socket) {
             avatar: socket.data.avatar,
           },
           attachment: message.attachment || null,
+          replyTo: message.replyTo ? String(message.replyTo) : null,
+          replySnapshot: message.replySnapshot || null,
           createdAt: message.createdAt?.toISOString?.() || new Date().toISOString(),
           conversationId: String(conversationId),
         },
@@ -159,6 +187,8 @@ export function registerMessageEvents(io, socket) {
       const messageWithSender = page.map((message) => ({
         ...message,
         id: message._id,
+        replyTo: message.replyTo ? String(message.replyTo) : null,
+        replySnapshot: message.replySnapshot || null,
         sender: {
           id: message.senderId?._id?.toString?.() || "",
           name: message.senderId?.name || "Unknown",
@@ -188,4 +218,3 @@ export function registerMessageEvents(io, socket) {
     }
   });
 }
-

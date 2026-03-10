@@ -14,6 +14,25 @@ const messageSchema = new mongoose.Schema(
     },
     content: String,
     attachment: String,
+    replyTo: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: "Message",
+      default: null,
+    },
+    // Denormalized preview of the replied message (avoids extra queries on render).
+    replySnapshot: {
+      type: new mongoose.Schema(
+        {
+          id: { type: String, default: "" },
+          senderName: { type: String, default: "" },
+          content: { type: String, default: "" },
+          attachment: { type: String, default: "" },
+          createdAt: { type: Date, default: null },
+        },
+        { _id: false }
+      ),
+      default: null,
+    },
   },
   {
     timestamps: true,
