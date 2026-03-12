@@ -149,6 +149,7 @@ export type MessageProps = {
   };
   content: string;
   attachment?: string | null;
+  reactions?: MessageReaction[];
   replyTo?: string | null;
   replySnapshot?: {
     id: string;
@@ -159,4 +160,9 @@ export type MessageProps = {
   } | null;
   isMe?: boolean;
   createdAt: string;
+};
+
+export type MessageReaction = {
+  emoji: string;
+  userIds: string[];
 };

@@ -1,4 +1,4 @@
-import { StyleSheet, TouchableOpacity, View } from "react-native";
+import { Pressable, StyleSheet, TouchableOpacity, View } from "react-native";
 import React, { useMemo, useRef, useState } from "react";
 import { MessageProps } from "@/types";
 import { useAuth } from "@/contexts/authContext";
@@ -11,21 +11,31 @@ import { Image } from "expo-image";
 import { useRouter } from "expo-router";
 import { Swipeable } from "react-native-gesture-handler";
 import * as Icons from "phosphor-react-native";
+import ReactionPicker, { ReactionPickerAnchor } from "./ReactionPicker";
 
 const MessageItem = ({
   item,
   isDirect,
   onReply,
+  onPressReplyQuote,
+  onToggleReaction,
 }: {
   item: MessageProps;
   isDirect: boolean;
   onReply?: (m: MessageProps) => void;
+  onPressReplyQuote?: (messageId: string) => void;
+  onToggleReaction?: (messageId: string, emoji: string) => void;
 }) => {
   const { user: currentUser } = useAuth();
   const router = useRouter();
   const isMe = currentUser?.id === item?.sender?.id;
   const swipeRef = useRef<Swipeable>(null);
+  const bubbleRef = useRef<View>(null);
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(
+    null,
+  );
+  const [reactionPickerVisible, setReactionPickerVisible] = useState(false);
+  const [reactionAnchor, setReactionAnchor] = useState<ReactionPickerAnchor | null>(
     null,
   );
 
@@ -45,6 +55,34 @@ const MessageItem = ({
       h: Math.max(verticalScale(140), Math.round(naturalSize.h * factor)),
     };
   }, [naturalSize]);
+
+  const reactionsSummary = useMemo(() => {
+    const uid = currentUser?.id ? String(currentUser.id) : null;
+    const list = Array.isArray(item?.reactions) ? item.reactions : [];
+
+    return list
+      .filter((r) => r?.emoji && Array.isArray(r.userIds) && r.userIds.length > 0)
+      .map((r) => ({
+        emoji: String(r.emoji),
+        count: r.userIds.length,
+        reactedByMe: uid ? r.userIds.some((id) => String(id) === uid) : false,
+      }))
+      .sort((a, b) => b.count - a.count);
+  }, [currentUser?.id, item?.reactions]);
+
+  const reactedEmojisByMe = useMemo(() => {
+    return reactionsSummary.filter((r) => r.reactedByMe).map((r) => r.emoji);
+  }, [reactionsSummary]);
+
+  const openReactionPicker = () => {
+    if (!bubbleRef.current) return;
+
+    bubbleRef.current.measureInWindow((x, y, w, h) => {
+      if (![x, y, w, h].every((n) => typeof n === "number" && isFinite(n))) return;
+      setReactionAnchor({ x, y, w, h });
+      setReactionPickerVisible(true);
+    });
+  };
 
   const renderReplyAction = () => (
     <View style={styles.replyActionWrap}>
@@ -83,7 +121,10 @@ const MessageItem = ({
           />
         )}
 
-        <View
+        <Pressable
+          ref={bubbleRef}
+          delayLongPress={250}
+          onLongPress={openReactionPicker}
           style={[
             styles.messageBubble,
             isMe ? styles.myBubble : styles.theirBubble,
@@ -96,7 +137,16 @@ const MessageItem = ({
           )}
 
           {item.replySnapshot && (
-            <View style={styles.replyQuote}>
+            <TouchableOpacity
+              activeOpacity={0.85}
+              disabled={!onPressReplyQuote || !item.replySnapshot?.id}
+              onPress={() => {
+                const id = item.replySnapshot?.id ? String(item.replySnapshot.id) : "";
+                if (!id) return;
+                onPressReplyQuote?.(id);
+              }}
+              style={styles.replyQuote}
+            >
               <View style={styles.replyQuoteAccent} />
               <View style={{ flex: 1 }}>
                 <Typo size={12} fontWeight={"700"} color={colors.neutral800}>
@@ -112,7 +162,14 @@ const MessageItem = ({
                     : item.replySnapshot.content || "Message"}
                 </Typo>
               </View>
-            </View>
+              {!!onPressReplyQuote && (
+                <Icons.CaretRightIcon
+                  size={16}
+                  weight="bold"
+                  color={colors.neutral500}
+                />
+              )}
+            </TouchableOpacity>
           )}
 
           {item.attachment && (
@@ -150,6 +207,30 @@ const MessageItem = ({
           )}
           {item.content && <Typo size={14}>{item.content}</Typo>}
 
+          {reactionsSummary.length > 0 && (
+            <View
+              style={[
+                styles.reactionsRow,
+                { alignSelf: isMe ? "flex-end" : "flex-start" },
+              ]}
+            >
+              {reactionsSummary.map((r) => (
+                <View
+                  key={r.emoji}
+                  style={[
+                    styles.reactionPill,
+                    r.reactedByMe && styles.reactionPillMine,
+                  ]}
+                >
+                  <Typo size={12}>{r.emoji}</Typo>
+                  <Typo size={11} color={colors.neutral700} fontWeight={"700"}>
+                    {r.count}
+                  </Typo>
+                </View>
+              ))}
+            </View>
+          )}
+
           <Typo
             style={{ alignSelf: "flex-end" }}
             size={11}
@@ -158,8 +239,20 @@ const MessageItem = ({
           >
             {formattedDate}
           </Typo>
-        </View>
+        </Pressable>
       </View>
+
+      <ReactionPicker
+        visible={reactionPickerVisible}
+        anchor={reactionAnchor}
+        isMe={isMe}
+        reactedEmojis={reactedEmojisByMe}
+        onRequestClose={() => setReactionPickerVisible(false)}
+        onSelect={(emoji) => {
+          onToggleReaction?.(String(item.id), emoji);
+          setReactionPickerVisible(false);
+        }}
+      />
     </Swipeable>
   );
 };
@@ -189,6 +282,24 @@ const styles = StyleSheet.create({
     padding: spacingX._10,
     borderRadius: radius._15,
     gap: spacingY._5,
+  },
+  reactionsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacingX._7,
+    marginTop: spacingY._3,
+  },
+  reactionPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacingX._3,
+    paddingHorizontal: spacingX._7,
+    paddingVertical: spacingY._3,
+    borderRadius: radius.full,
+    backgroundColor: "rgba(0,0,0,0.06)",
+  },
+  reactionPillMine: {
+    backgroundColor: "rgba(0,0,0,0.12)",
   },
   replyQuote: {
     flexDirection: "row",

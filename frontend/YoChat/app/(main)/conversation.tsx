@@ -70,15 +70,12 @@ const Conversation = () => {
   const [presence, setPresence] = useState<
     Record<string, { online: boolean; lastSeen?: string | null }>
   >({});
-  const [replyDraft, setReplyDraft] = useState<
-    | {
-        id: string;
-        senderName: string;
-        content: string;
-        attachment?: string | null;
-      }
-    | null
-  >(null);
+  const [replyDraft, setReplyDraft] = useState<{
+    id: string;
+    senderName: string;
+    content: string;
+    attachment?: string | null;
+  } | null>(null);
   const isTypingRef = useRef(false);
   const lastTypingEmitAtRef = useRef(0);
   const typingStopTimerRef = useRef<any>(null);
@@ -90,6 +87,7 @@ const Conversation = () => {
     Record<string, "replace" | "append">
   >({});
   const loadingMessagesForRef = useRef<string | null>(null);
+  const listRef = useRef<FlatList<any> | null>(null);
 
   useEffect(() => {
     conversationIdRef.current = conversationId ? String(conversationId) : null;
@@ -243,7 +241,10 @@ const Conversation = () => {
 
     if (kind === "replace") {
       // Only end the "initial load" spinner for the latest replace request.
-      if (!loadingMessagesForRef.current || loadingMessagesForRef.current === requestId) {
+      if (
+        !loadingMessagesForRef.current ||
+        loadingMessagesForRef.current === requestId
+      ) {
         setLoadingMessages(false);
         loadingMessagesForRef.current = null;
       }
@@ -378,6 +379,93 @@ const Conversation = () => {
       attachment,
     });
   }, []);
+
+  const toggleReactionForMessage = useCallback(
+    (messageId: string, emoji: string) => {
+      const uid = currentUserIdRef.current;
+      if (!uid) return;
+      const targetId = String(messageId || "");
+      const selectedEmoji = String(emoji || "");
+      if (!targetId || !selectedEmoji) return;
+
+      setMessageState((prev) => {
+        const activeId = conversationIdRef.current
+          ? String(conversationIdRef.current)
+          : null;
+        if (!activeId || prev.conversationId !== activeId) return prev;
+
+        return {
+          conversationId: prev.conversationId,
+          items: prev.items.map((m) => {
+            if (String(m.id) !== targetId) return m;
+
+            const reactions = Array.isArray(m.reactions) ? m.reactions : [];
+            const idx = reactions.findIndex((r) => r?.emoji === selectedEmoji);
+
+            if (idx < 0) {
+              return {
+                ...m,
+                reactions: [...reactions, { emoji: selectedEmoji, userIds: [uid] }],
+              };
+            }
+
+            const entry = reactions[idx];
+            const userIds = Array.isArray(entry?.userIds) ? entry.userIds : [];
+            const hasReacted = userIds.some((id) => String(id) === String(uid));
+            const nextUserIds = hasReacted
+              ? userIds.filter((id) => String(id) !== String(uid))
+              : [...userIds, uid];
+
+            const nextReactions =
+              nextUserIds.length === 0
+                ? reactions.filter((_, i) => i !== idx)
+                : reactions.map((r, i) =>
+                    i === idx ? { ...r, userIds: nextUserIds } : r,
+                  );
+
+            return { ...m, reactions: nextReactions };
+          }),
+        };
+      });
+    },
+    [],
+  );
+  const typingLabel = (() => {
+    const names = Object.values(typingUsers);
+    if (names.length === 0) return null;
+    if (names.length === 1) return `${names[0]} is typing...`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
+    return `${names[0]} and others are typing...`;
+  })();
+
+  const scrollToMessageId = useCallback(
+    (messageId: string) => {
+      const id = String(messageId || "");
+      if (!id) return;
+
+      const idxInItems = messageState.items.findIndex(
+        (m) => String(m.id) === id,
+      );
+      if (idxInItems < 0) {
+        Alert.alert("Reply", "That message isn't loaded yet.");
+        return;
+      }
+
+      // FlatList data includes an optional typing row at index 0.
+      const listIndex = typingLabel ? idxInItems + 1 : idxInItems;
+
+      try {
+        listRef.current?.scrollToIndex({
+          index: listIndex,
+          animated: true,
+          viewPosition: 0.5,
+        });
+      } catch {
+        // Fallback handled by onScrollToIndexFailed
+      }
+    },
+    [messageState.items, typingLabel],
+  );
 
   const MessagesSkeleton = () => {
     const items = Array.from({ length: 8 }).map((_, idx) => idx);
@@ -519,14 +607,6 @@ const Conversation = () => {
       }
     }, 800);
   };
-
-  const typingLabel = (() => {
-    const names = Object.values(typingUsers);
-    if (names.length === 0) return null;
-    if (names.length === 1) return `${names[0]} is typing...`;
-    if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
-    return `${names[0]} and others are typing...`;
-  })();
 
   const statusLine = (() => {
     if (typingLabel) return typingLabel;
@@ -678,12 +758,29 @@ const Conversation = () => {
             <MessagesSkeleton />
           ) : (
             <FlatList
+              ref={(r) => {
+                listRef.current = r;
+              }}
               data={listData}
               inverted={true}
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.messagesContent}
               onEndReached={onLoadMore}
               onEndReachedThreshold={0.2}
+              onScrollToIndexFailed={(info) => {
+                // Retry after measurement (RN recommendation).
+                setTimeout(() => {
+                  const target = Math.min(
+                    info.index,
+                    info.highestMeasuredFrameIndex || info.index,
+                  );
+                  listRef.current?.scrollToIndex({
+                    index: target,
+                    animated: true,
+                    viewPosition: 0.5,
+                  });
+                }, 60);
+              }}
               ListFooterComponent={
                 loadingMore ? (
                   <View style={{ paddingVertical: spacingY._10 }}>
@@ -694,7 +791,10 @@ const Conversation = () => {
               renderItem={({ item }) => {
                 if (isTypingItem(item)) {
                   return (
-                    <TypingMessageItem label={typingLabel} isDirect={isDirect} />
+                    <TypingMessageItem
+                      label={typingLabel}
+                      isDirect={isDirect}
+                    />
                   );
                 }
                 return (
@@ -702,6 +802,8 @@ const Conversation = () => {
                     item={item}
                     isDirect={isDirect}
                     onReply={setReplyFromMessage}
+                    onPressReplyQuote={scrollToMessageId}
+                    onToggleReaction={toggleReactionForMessage}
                   />
                 );
               }}
@@ -732,7 +834,11 @@ const Conversation = () => {
                   onPress={() => setReplyDraft(null)}
                   style={styles.replyClose}
                 >
-                  <Icons.XIcon size={14} weight="bold" color={colors.neutral700} />
+                  <Icons.XIcon
+                    size={14}
+                    weight="bold"
+                    color={colors.neutral700}
+                  />
                 </TouchableOpacity>
               </View>
             )}
