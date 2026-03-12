@@ -33,6 +33,24 @@ const messageSchema = new mongoose.Schema(
       ),
       default: null,
     },
+    reactions: {
+      type: [
+        new mongoose.Schema(
+          {
+            emoji: { type: String, required: true },
+            userIds: [
+              {
+                type: mongoose.Schema.Types.ObjectId,
+                ref: "User",
+                required: true,
+              },
+            ],
+          },
+          { _id: false }
+        ),
+      ],
+      default: [],
+    },
   },
   {
     timestamps: true,

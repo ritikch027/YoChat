@@ -1,4 +1,11 @@
-import { Pressable, StyleSheet, TouchableOpacity, View } from "react-native";
+import {
+  Animated,
+  PanResponder,
+  Pressable,
+  StyleSheet,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import React, { useMemo, useRef, useState } from "react";
 import { MessageProps } from "@/types";
 import { useAuth } from "@/contexts/authContext";
@@ -9,9 +16,9 @@ import Typo from "./Typo";
 import moment from "moment";
 import { Image } from "expo-image";
 import { useRouter } from "expo-router";
-import { Swipeable } from "react-native-gesture-handler";
 import * as Icons from "phosphor-react-native";
 import ReactionPicker, { ReactionPickerAnchor } from "./ReactionPicker";
+import ReactionDetailsModal from "./ReactionDetailsModal";
 
 const MessageItem = ({
   item,
@@ -19,17 +26,18 @@ const MessageItem = ({
   onReply,
   onPressReplyQuote,
   onToggleReaction,
+  reactionUsersById,
 }: {
   item: MessageProps;
   isDirect: boolean;
   onReply?: (m: MessageProps) => void;
   onPressReplyQuote?: (messageId: string) => void;
   onToggleReaction?: (messageId: string, emoji: string) => void;
+  reactionUsersById?: Record<string, { name: string; avatar: string | null }>;
 }) => {
   const { user: currentUser } = useAuth();
   const router = useRouter();
   const isMe = currentUser?.id === item?.sender?.id;
-  const swipeRef = useRef<Swipeable>(null);
   const bubbleRef = useRef<View>(null);
   const [naturalSize, setNaturalSize] = useState<{ w: number; h: number } | null>(
     null,
@@ -38,6 +46,15 @@ const MessageItem = ({
   const [reactionAnchor, setReactionAnchor] = useState<ReactionPickerAnchor | null>(
     null,
   );
+  const [reactionDetailsVisible, setReactionDetailsVisible] = useState(false);
+  const [reactionDetailsEmoji, setReactionDetailsEmoji] = useState<string>("");
+  const [reactionDetailsUserIds, setReactionDetailsUserIds] = useState<string[]>([]);
+
+  const swipeX = useRef(new Animated.Value(0)).current;
+  const swipeFiredRef = useRef(false);
+  const swipeEnabled = !!onReply;
+  const SWIPE_MAX = scale(86);
+  const SWIPE_TRIGGER = 52;
 
   const formattedDate = moment(item.createdAt).isSame(moment(), "day")
     ? moment(item.createdAt).format("h:mm A")
@@ -65,6 +82,7 @@ const MessageItem = ({
       .map((r) => ({
         emoji: String(r.emoji),
         count: r.userIds.length,
+        userIds: r.userIds.map((id) => String(id)),
         reactedByMe: uid ? r.userIds.some((id) => String(id) === uid) : false,
       }))
       .sort((a, b) => b.count - a.count);
@@ -84,163 +102,220 @@ const MessageItem = ({
     });
   };
 
-  const renderReplyAction = () => (
-    <View style={styles.replyActionWrap}>
-      <View style={styles.replyActionPill}>
-        <Icons.ArrowBendUpLeftIcon size={18} weight="fill" color={colors.white} />
-        <Typo size={12} color={colors.white} fontWeight={"700"}>
-          Reply
-        </Typo>
-      </View>
-    </View>
-  );
+  const openReactionDetails = (emoji: string) => {
+    if (isDirect) return; // only in groups
+
+    const selectedEmoji = String(emoji || "");
+    if (!selectedEmoji) return;
+
+    const match = reactionsSummary.find((r) => r.emoji === selectedEmoji);
+    const ids = match?.userIds || [];
+
+    setReactionDetailsEmoji(selectedEmoji);
+    setReactionDetailsUserIds(ids);
+    setReactionDetailsVisible(true);
+  };
+
+  const panResponder = useMemo(() => {
+    if (!swipeEnabled) {
+      return PanResponder.create({
+        onMoveShouldSetPanResponder: () => false,
+        onPanResponderMove: () => {},
+        onPanResponderRelease: () => {},
+      });
+    }
+
+    return PanResponder.create({
+      onMoveShouldSetPanResponder: (_evt, g) => {
+        if (!swipeEnabled) return false;
+        if (g.dx <= 0) return false; // only swipe right
+        if (Math.abs(g.dx) < 8) return false;
+        return Math.abs(g.dx) > Math.abs(g.dy) * 1.2;
+      },
+      onPanResponderGrant: () => {
+        swipeX.stopAnimation();
+        swipeFiredRef.current = false;
+      },
+      onPanResponderMove: (_evt, g) => {
+        const dx = Math.max(0, Math.min(SWIPE_MAX, g.dx));
+        swipeX.setValue(dx);
+
+        if (!swipeFiredRef.current && g.dx >= SWIPE_TRIGGER) {
+          swipeFiredRef.current = true;
+          onReply?.(item);
+          Animated.timing(swipeX, {
+            toValue: 0,
+            duration: 140,
+            useNativeDriver: true,
+          }).start();
+        }
+      },
+      onPanResponderRelease: () => {
+        Animated.timing(swipeX, {
+          toValue: 0,
+          duration: 160,
+          useNativeDriver: true,
+        }).start();
+      },
+      onPanResponderTerminate: () => {
+        Animated.timing(swipeX, {
+          toValue: 0,
+          duration: 160,
+          useNativeDriver: true,
+        }).start();
+      },
+    });
+  }, [SWIPE_MAX, SWIPE_TRIGGER, item, onReply, swipeEnabled, swipeX]);
 
   return (
-    <Swipeable
-      ref={swipeRef}
-      enabled={!!onReply}
-      renderLeftActions={renderReplyAction}
-      leftThreshold={50}
-      friction={2}
-      onSwipeableOpen={() => {
-        swipeRef.current?.close();
-        onReply?.(item);
-      }}
-    >
-      <View
-        style={[
-          styles.messageContainer,
-          isMe ? styles.myMessage : styles.theirMessage,
-        ]}
+    <View style={styles.swipeWrap}>
+      <Animated.View
+        style={{ transform: [{ translateX: swipeX }] }}
+        {...(swipeEnabled ? panResponder.panHandlers : {})}
       >
-        {!isMe && !isDirect && (
-          <Avatar
-            size={30}
-            uri={item?.sender?.avatar}
-            style={styles.messageAvatar}
-          />
-        )}
-
-        <Pressable
-          ref={bubbleRef}
-          delayLongPress={250}
-          onLongPress={openReactionPicker}
+        <View
           style={[
-            styles.messageBubble,
-            isMe ? styles.myBubble : styles.theirBubble,
+            styles.messageContainer,
+            isMe ? styles.myMessage : styles.theirMessage,
+            reactionsSummary.length > 0 && styles.messageWithReactions,
           ]}
         >
           {!isMe && !isDirect && (
-            <Typo color={colors.neutral900} size={13} fontWeight={"600"}>
-              {item.sender.name}
-            </Typo>
+            <Avatar
+              size={30}
+              uri={item?.sender?.avatar}
+              style={styles.messageAvatar}
+            />
           )}
 
-          {item.replySnapshot && (
-            <TouchableOpacity
-              activeOpacity={0.85}
-              disabled={!onPressReplyQuote || !item.replySnapshot?.id}
-              onPress={() => {
-                const id = item.replySnapshot?.id ? String(item.replySnapshot.id) : "";
-                if (!id) return;
-                onPressReplyQuote?.(id);
-              }}
-              style={styles.replyQuote}
-            >
-              <View style={styles.replyQuoteAccent} />
-              <View style={{ flex: 1 }}>
-                <Typo size={12} fontWeight={"700"} color={colors.neutral800}>
-                  {item.replySnapshot.senderName || "User"}
-                </Typo>
-                <Typo
-                  size={12}
-                  color={colors.neutral600}
-                  textProps={{ numberOfLines: 1 }}
-                >
-                  {item.replySnapshot.attachment
-                    ? "Image"
-                    : item.replySnapshot.content || "Message"}
-                </Typo>
-              </View>
-              {!!onPressReplyQuote && (
-                <Icons.CaretRightIcon
-                  size={16}
-                  weight="bold"
-                  color={colors.neutral500}
-                />
-              )}
-            </TouchableOpacity>
-          )}
+          <Pressable
+            ref={bubbleRef}
+            delayLongPress={250}
+            onLongPress={openReactionPicker}
+            style={[
+              styles.messageBubble,
+              isMe ? styles.myBubble : styles.theirBubble,
+              reactionsSummary.length > 0 && styles.bubbleWithReactions,
+            ]}
+          >
+            {!isMe && !isDirect && (
+              <Typo color={colors.neutral900} size={13} fontWeight={"600"}>
+                {item.sender.name}
+              </Typo>
+            )}
 
-          {item.attachment && (
-            <TouchableOpacity
-              activeOpacity={0.9}
-              onPress={() =>
-                router.push({
-                  pathname: "/(modals)/attachment",
-                  params: { uri: String(item.attachment) },
-                })
-              }
-            >
-              <Image
-                source={item.attachment}
-                contentFit="cover"
-                style={[
-                  styles.attachment,
-                  { width: attachmentSize.w, height: attachmentSize.h },
-                ]}
-                transition={100}
-                onLoad={(e: any) => {
-                  const w = e?.source?.width;
-                  const h = e?.source?.height;
-                  if (
-                    typeof w === "number" &&
-                    typeof h === "number" &&
-                    w > 0 &&
-                    h > 0
-                  ) {
-                    setNaturalSize({ w, h });
-                  }
+            {item.replySnapshot && (
+              <TouchableOpacity
+                activeOpacity={0.85}
+                disabled={!onPressReplyQuote || !item.replySnapshot?.id}
+                onPress={() => {
+                  const id = item.replySnapshot?.id
+                    ? String(item.replySnapshot.id)
+                    : "";
+                  if (!id) return;
+                  onPressReplyQuote?.(id);
                 }}
-              />
-            </TouchableOpacity>
-          )}
-          {item.content && <Typo size={14}>{item.content}</Typo>}
-
-          {reactionsSummary.length > 0 && (
-            <View
-              style={[
-                styles.reactionsRow,
-                { alignSelf: isMe ? "flex-end" : "flex-start" },
-              ]}
-            >
-              {reactionsSummary.map((r) => (
-                <View
-                  key={r.emoji}
-                  style={[
-                    styles.reactionPill,
-                    r.reactedByMe && styles.reactionPillMine,
-                  ]}
-                >
-                  <Typo size={12}>{r.emoji}</Typo>
-                  <Typo size={11} color={colors.neutral700} fontWeight={"700"}>
-                    {r.count}
+                style={styles.replyQuote}
+              >
+                <View style={styles.replyQuoteAccent} />
+                <View style={{ flex: 1 }}>
+                  <Typo size={12} fontWeight={"700"} color={colors.neutral800}>
+                    {item.replySnapshot.senderName || "User"}
+                  </Typo>
+                  <Typo
+                    size={12}
+                    color={colors.neutral600}
+                    textProps={{ numberOfLines: 1 }}
+                  >
+                    {item.replySnapshot.attachment
+                      ? "Image"
+                      : item.replySnapshot.content || "Message"}
                   </Typo>
                 </View>
-              ))}
-            </View>
-          )}
+                {!!onPressReplyQuote && (
+                  <Icons.CaretRightIcon
+                    size={16}
+                    weight="bold"
+                    color={colors.neutral500}
+                  />
+                )}
+              </TouchableOpacity>
+            )}
 
-          <Typo
-            style={{ alignSelf: "flex-end" }}
-            size={11}
-            fontWeight={"500"}
-            color={colors.neutral600}
-          >
-            {formattedDate}
-          </Typo>
-        </Pressable>
-      </View>
+            {item.attachment && (
+              <TouchableOpacity
+                activeOpacity={0.9}
+                onPress={() =>
+                  router.push({
+                    pathname: "/(modals)/attachment",
+                    params: { uri: String(item.attachment) },
+                  })
+                }
+              >
+                <Image
+                  source={item.attachment}
+                  contentFit="cover"
+                  style={[
+                    styles.attachment,
+                    { width: attachmentSize.w, height: attachmentSize.h },
+                  ]}
+                  transition={100}
+                  onLoad={(e: any) => {
+                    const w = e?.source?.width;
+                    const h = e?.source?.height;
+                    if (
+                      typeof w === "number" &&
+                      typeof h === "number" &&
+                      w > 0 &&
+                      h > 0
+                    ) {
+                      setNaturalSize({ w, h });
+                    }
+                  }}
+                />
+              </TouchableOpacity>
+            )}
+            {item.content && <Typo size={14}>{item.content}</Typo>}
+
+            <Typo
+              style={{ alignSelf: "flex-end" }}
+              size={11}
+              fontWeight={"500"}
+              color={colors.neutral600}
+            >
+              {formattedDate}
+            </Typo>
+
+            {reactionsSummary.length > 0 && (
+              <View
+                pointerEvents="box-none"
+                style={styles.reactionsOverlay}
+              >
+                <View style={styles.reactionsOverlayInner}>
+                  {reactionsSummary.map((r) => (
+                    <Pressable
+                      key={r.emoji}
+                      hitSlop={6}
+                      disabled={isDirect}
+                      onPress={() => openReactionDetails(r.emoji)}
+                      style={[
+                        styles.reactionChip,
+                        r.reactedByMe && styles.reactionChipMine,
+                        isDirect && styles.reactionPillDisabled,
+                      ]}
+                    >
+                      <Typo size={12}>{r.emoji}</Typo>
+                      <Typo size={11} color={colors.neutral700} fontWeight={"700"}>
+                        {r.count}
+                      </Typo>
+                    </Pressable>
+                  ))}
+                </View>
+              </View>
+            )}
+          </Pressable>
+        </View>
+      </Animated.View>
 
       <ReactionPicker
         visible={reactionPickerVisible}
@@ -253,17 +328,31 @@ const MessageItem = ({
           setReactionPickerVisible(false);
         }}
       />
-    </Swipeable>
+
+      <ReactionDetailsModal
+        visible={reactionDetailsVisible}
+        emoji={reactionDetailsEmoji}
+        userIds={reactionDetailsUserIds}
+        userLookup={reactionUsersById || {}}
+        onClose={() => setReactionDetailsVisible(false)}
+      />
+    </View>
   );
 };
 
 export default MessageItem;
 
 const styles = StyleSheet.create({
+  swipeWrap: {
+    position: "relative",
+  },
   messageContainer: {
     flexDirection: "row",
     gap: spacingX._7,
     maxWidth: "80%",
+  },
+  messageWithReactions: {
+    marginBottom: spacingY._12,
   },
   myMessage: {
     alignSelf: "flex-end",
@@ -283,29 +372,53 @@ const styles = StyleSheet.create({
     borderRadius: radius._15,
     gap: spacingY._5,
   },
-  reactionsRow: {
+  bubbleWithReactions: {
+    paddingBottom: spacingY._12,
+  },
+  reactionPillDisabled: {
+    opacity: 0.85,
+  },
+  reactionsOverlay: {
+    position: "absolute",
+    bottom: -verticalScale(14),
+    zIndex: 10,
+    left: spacingX._7,
+  },
+  reactionsOverlayInner: {
     flexDirection: "row",
     flexWrap: "wrap",
+    alignItems: "center",
     gap: spacingX._7,
-    marginTop: spacingY._3,
+    paddingHorizontal: spacingX._7,
+    paddingVertical: spacingY._5,
+    borderRadius: radius.full,
+    backgroundColor: colors.white,
+    borderWidth: 1,
+    borderColor: "rgba(0,0,0,0.08)",
+    shadowColor: "#000",
+    shadowOpacity: 0.12,
+    shadowRadius: 10,
+    shadowOffset: { width: 0, height: 6 },
+    elevation: 6,
   },
-  reactionPill: {
+  reactionChip: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacingX._3,
     paddingHorizontal: spacingX._7,
-    paddingVertical: spacingY._3,
+    paddingVertical: spacingY._5,
     borderRadius: radius.full,
-    backgroundColor: "rgba(0,0,0,0.06)",
+    backgroundColor: colors.neutral100,
   },
-  reactionPillMine: {
-    backgroundColor: "rgba(0,0,0,0.12)",
+  reactionChipMine: {
+    backgroundColor: colors.neutral200,
   },
   replyQuote: {
     flexDirection: "row",
     gap: spacingX._7,
     paddingVertical: spacingY._7,
     paddingHorizontal: spacingX._7,
+    minWidth: scale(140),
     borderRadius: radius._10,
     backgroundColor: "rgba(0,0,0,0.06)",
   },
@@ -319,18 +432,5 @@ const styles = StyleSheet.create({
   },
   theirBubble: {
     backgroundColor: colors.otherBubble,
-  },
-  replyActionWrap: {
-    justifyContent: "center",
-    paddingHorizontal: spacingX._10,
-  },
-  replyActionPill: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: spacingX._7,
-    backgroundColor: colors.neutral900,
-    paddingHorizontal: spacingX._12,
-    paddingVertical: spacingY._7,
-    borderRadius: radius.full,
   },
 });

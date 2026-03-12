@@ -189,3 +189,19 @@ export const typing = (payload: any, off: boolean = false) => {
     socket.emit("typing", payload);
   }
 };
+
+export const toggleReaction = (payload: any, off: boolean = false) => {
+  const socket = getSocket();
+  if (!socket) {
+    console.log("socket is not connected");
+    return;
+  }
+
+  if (off) {
+    socket.off("toggleReaction", payload);
+  } else if (typeof payload == "function") {
+    socket.on("toggleReaction", payload);
+  } else {
+    socket.emit("toggleReaction", payload);
+  }
+};

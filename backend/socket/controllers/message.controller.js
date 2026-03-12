@@ -78,6 +78,7 @@ export function registerMessageEvents(io, socket) {
             avatar: socket.data.avatar,
           },
           attachment: message.attachment || null,
+          reactions: message.reactions || [],
           replyTo: message.replyTo ? String(message.replyTo) : null,
           replySnapshot: message.replySnapshot || null,
           createdAt: message.createdAt?.toISOString?.() || new Date().toISOString(),
@@ -94,6 +95,85 @@ export function registerMessageEvents(io, socket) {
       socket.emit("newMessage", {
         success: false,
         message: "Failed to send message",
+      });
+    }
+  });
+
+  socket.on("toggleReaction", async (data) => {
+    try {
+      const userId = socket.data.userId;
+      if (!userId) {
+        socket.emit("toggleReaction", { success: false, message: "Unauthorized" });
+        return;
+      }
+
+      const conversationId = data?.conversationId;
+      const messageId = data?.messageId;
+      const emoji = data?.emoji ? String(data.emoji) : "";
+
+      if (!conversationId || !messageId || !emoji) {
+        socket.emit("toggleReaction", {
+          success: false,
+          message: "Missing conversationId/messageId/emoji",
+        });
+        return;
+      }
+
+      const membership = await requireConversationParticipant(conversationId, userId);
+      if (!membership.ok) {
+        socket.emit("toggleReaction", { success: false, message: membership.error });
+        return;
+      }
+
+      const message = await Message.findOne({
+        _id: messageId,
+        conversationId,
+      });
+
+      if (!message) {
+        socket.emit("toggleReaction", { success: false, message: "Message not found" });
+        return;
+      }
+
+      const uidStr = String(userId);
+      const reactions = Array.isArray(message.reactions) ? message.reactions : [];
+      const idx = reactions.findIndex((r) => String(r?.emoji || "") === emoji);
+
+      if (idx < 0) {
+        reactions.push({ emoji, userIds: [userId] });
+      } else {
+        const entry = reactions[idx];
+        const userIds = Array.isArray(entry.userIds) ? entry.userIds : [];
+        const has = userIds.some((id) => String(id) === uidStr);
+        const nextUserIds = has
+          ? userIds.filter((id) => String(id) !== uidStr)
+          : [...userIds, userId];
+
+        if (nextUserIds.length === 0) reactions.splice(idx, 1);
+        else reactions[idx] = { emoji, userIds: nextUserIds };
+      }
+
+      message.reactions = reactions;
+      await message.save();
+
+      const payloadReactions = (message.reactions || []).map((r) => ({
+        emoji: String(r.emoji),
+        userIds: (r.userIds || []).map((id) => String(id)),
+      }));
+
+      io.to(String(conversationId)).emit("toggleReaction", {
+        success: true,
+        data: {
+          conversationId: String(conversationId),
+          messageId: String(message._id),
+          reactions: payloadReactions,
+        },
+      });
+    } catch (e) {
+      console.log("toggleReaction error: ", e);
+      socket.emit("toggleReaction", {
+        success: false,
+        message: "Failed to toggle reaction",
       });
     }
   });
@@ -189,6 +269,12 @@ export function registerMessageEvents(io, socket) {
         id: message._id,
         replyTo: message.replyTo ? String(message.replyTo) : null,
         replySnapshot: message.replySnapshot || null,
+        reactions: Array.isArray(message.reactions)
+          ? message.reactions.map((r) => ({
+              emoji: String(r.emoji),
+              userIds: Array.isArray(r.userIds) ? r.userIds.map((id) => String(id)) : [],
+            }))
+          : [],
         sender: {
           id: message.senderId?._id?.toString?.() || "",
           name: message.senderId?.name || "Unknown",

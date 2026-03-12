@@ -20,7 +20,7 @@ import Typo from "@/components/Typo";
 import { colors, radius, spacingX, spacingY } from "@/constants/theme";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAuth } from "@/contexts/authContext";
-import { scale, verticalScale } from "@/utils/styling";
+import { verticalScale } from "@/utils/styling";
 import Header from "@/components/Header";
 import BackButton from "@/components/BackButton";
 import Avatar from "@/components/Avatar";
@@ -37,6 +37,7 @@ import {
   presenceInit,
   presenceUpdate,
   presenceUsers,
+  toggleReaction,
   typing,
 } from "@/socket/socketEvents";
 import { MessageProps, ResponseProps } from "@/types";
@@ -104,6 +105,31 @@ const Conversation = () => {
       return [];
     }
   }, [stringifiedParticipants]);
+
+  const reactionUsersById = useMemo(() => {
+    const next: Record<string, { name: string; avatar: string | null }> = {};
+
+    participants.forEach((p: any) => {
+      const id = p?._id ?? p?.id ?? "";
+      const key = id ? String(id) : "";
+      if (!key) return;
+
+      next[key] = {
+        name: String(p?.name || "User"),
+        avatar: p?.avatar ? String(p.avatar) : null,
+      };
+    });
+
+    if (currentUser?.id) {
+      const key = String(currentUser.id);
+      next[key] = {
+        name: String(currentUser?.name || "You"),
+        avatar: currentUser?.avatar ? String(currentUser.avatar) : null,
+      };
+    }
+
+    return next;
+  }, [currentUser?.avatar, currentUser?.id, currentUser?.name, participants]);
 
   let conversationAvatar = avatar;
   let isDirect = String(type) === "direct";
@@ -316,6 +342,7 @@ const Conversation = () => {
     presenceUpdate(processPresenceUpdate);
     presenceGet();
     presenceUsers(handlePresenceUsers);
+    toggleReaction(toggleReactionHandler);
 
     return () => {
       newMessage(newMessageHandler, true);
@@ -324,6 +351,7 @@ const Conversation = () => {
       presenceInit(processPresenceInit, true);
       presenceUpdate(processPresenceUpdate, true);
       presenceUsers(handlePresenceUsers, true);
+      toggleReaction(toggleReactionHandler, true);
 
       if (typingStopTimerRef.current) clearTimeout(typingStopTimerRef.current);
       Object.values(remoteTypingTimersRef.current).forEach((t) =>
@@ -344,6 +372,7 @@ const Conversation = () => {
     handlePresenceUsers,
     processPresenceInit,
     processPresenceUpdate,
+    toggleReactionHandler,
   ]);
 
   useEffect(() => {
@@ -388,6 +417,15 @@ const Conversation = () => {
       const selectedEmoji = String(emoji || "");
       if (!targetId || !selectedEmoji) return;
 
+      const activeConversationId = conversationIdRef.current;
+      if (activeConversationId) {
+        toggleReaction({
+          conversationId: String(activeConversationId),
+          messageId: targetId,
+          emoji: selectedEmoji,
+        });
+      }
+
       setMessageState((prev) => {
         const activeId = conversationIdRef.current
           ? String(conversationIdRef.current)
@@ -430,6 +468,34 @@ const Conversation = () => {
     },
     [],
   );
+
+  const toggleReactionHandler = useCallback((res: ResponseProps) => {
+    if (!res?.success || !res?.data) return;
+
+    const activeConversationId = conversationIdRef.current;
+    if (
+      !activeConversationId ||
+      !res.data?.conversationId ||
+      String(res.data.conversationId) !== String(activeConversationId)
+    ) {
+      return;
+    }
+
+    const messageId = res.data?.messageId ? String(res.data.messageId) : "";
+    if (!messageId) return;
+
+    const reactions = Array.isArray(res.data?.reactions) ? res.data.reactions : [];
+
+    setMessageState((prev) => {
+      if (prev.conversationId !== String(activeConversationId)) return prev;
+      return {
+        conversationId: prev.conversationId,
+        items: prev.items.map((m) =>
+          String(m.id) === messageId ? { ...m, reactions } : m,
+        ),
+      };
+    });
+  }, []);
   const typingLabel = (() => {
     const names = Object.values(typingUsers);
     if (names.length === 0) return null;
@@ -804,6 +870,7 @@ const Conversation = () => {
                     onReply={setReplyFromMessage}
                     onPressReplyQuote={scrollToMessageId}
                     onToggleReaction={toggleReactionForMessage}
+                    reactionUsersById={reactionUsersById}
                   />
                 );
               }}
@@ -847,7 +914,6 @@ const Conversation = () => {
               onChangeText={onChangeMessage}
               containerStyle={{
                 paddingLeft: spacingX._10,
-                paddingRight: scale(65),
                 borderWidth: 0,
               }}
               placeholder="Type Message"
@@ -870,24 +936,26 @@ const Conversation = () => {
                   )}
                 </TouchableOpacity>
               }
+              rightIcon={
+                <View style={styles.sendWrap}>
+                  <TouchableOpacity
+                    style={styles.inputIcon}
+                    onPress={onSend}
+                    activeOpacity={0.6}
+                  >
+                    {loading ? (
+                      <Loading size="small" color={colors.black} />
+                    ) : (
+                      <Icons.PaperPlaneTiltIcon
+                        size={verticalScale(22)}
+                        weight="fill"
+                        color={colors.black}
+                      />
+                    )}
+                  </TouchableOpacity>
+                </View>
+              }
             />
-            <View style={styles.inputRightIcon}>
-              <TouchableOpacity
-                style={styles.inputIcon}
-                onPress={onSend}
-                activeOpacity={0.6}
-              >
-                {loading ? (
-                  <Loading size="small" color={colors.black} />
-                ) : (
-                  <Icons.PaperPlaneTiltIcon
-                    size={verticalScale(22)}
-                    weight="fill"
-                    color={colors.black}
-                  />
-                )}
-              </TouchableOpacity>
-            </View>
           </View>
         </View>
       </KeyboardAvoidingView>
@@ -927,10 +995,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: colors.neutral900,
   },
-  inputRightIcon: {
-    position: "absolute",
-    right: scale(10),
-    top: verticalScale(15),
+  sendWrap: {
     paddingLeft: spacingX._12,
     borderLeftWidth: 1.5,
     borderLeftColor: colors.neutral300,
