@@ -389,7 +389,7 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     alignItems: "center",
     gap: spacingX._7,
-    paddingHorizontal: spacingX._7,
+    paddingHorizontal: spacingX._5,
     paddingVertical: spacingY._5,
     borderRadius: radius.full,
     backgroundColor: colors.white,
