@@ -1,6 +1,7 @@
 import { Router } from "expo-router";
 import { ReactNode } from "react";
 import {
+  StyleProp,
   TextInput,
   TextInputProps,
   TextProps,
@@ -14,8 +15,9 @@ export type TypoProps = {
   color?: string;
   fontWeight?: TextStyle["fontWeight"];
   children: any | null;
-  style?: TextStyle;
+  style?: StyleProp<TextStyle>;
   textProps?: TextProps;
+  variant?: "chat_message" | "chat_meta" | "title" | "body";
 };
 
 export interface UserProps {
@@ -165,4 +167,62 @@ export type MessageProps = {
 export type MessageReaction = {
   emoji: string;
   userIds: string[];
+};
+
+export type CallMediaType = "audio" | "video";
+export type CallDirection = "incoming" | "outgoing";
+export type CallStatus =
+  | "ringing"
+  | "connecting"
+  | "active"
+  | "rejected"
+  | "missed"
+  | "ended";
+
+export type CallPeer = {
+  id: string;
+  name: string;
+  avatar?: string | null;
+};
+
+export type CallSessionPayload = {
+  callId: string;
+  conversationId: string;
+  channelName: string;
+  mediaType: CallMediaType;
+  direction: CallDirection;
+  status: CallStatus;
+  statusLabel: string;
+  rtcUid: number;
+  rtcToken: string;
+  appId?: string;
+  tokenExpiresAt?: number;
+  peer: CallPeer;
+  startedAt?: string | null;
+  createdAt?: string | null;
+};
+
+export type CallInvitePayload = {
+  conversationId: string;
+  targetUserId: string;
+  targetUserName: string;
+  targetUserAvatar?: string | null;
+  mediaType: CallMediaType;
+};
+
+export type CallContextValue = {
+  currentCall: CallSessionPayload | null;
+  remoteRtcUid: number | null;
+  localJoined: boolean;
+  isMuted: boolean;
+  isSpeakerOn: boolean;
+  isVideoEnabled: boolean;
+  placeCall: (payload: CallInvitePayload) => void;
+  acceptIncomingCall: () => void;
+  rejectIncomingCall: () => void;
+  endCurrentCall: () => void;
+  toggleMute: () => void;
+  toggleSpeaker: () => void;
+  toggleVideo: () => void;
+  switchCamera: () => void;
 };

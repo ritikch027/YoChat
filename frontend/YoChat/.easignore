@@ -1,0 +1,21 @@
+# EAS Build upload ignore list (project root: frontend/YoChat)
+
+.expo
+.vscode
+**/.DS_Store
+**/*.log
+
+# Dependencies are installed on the build worker
+node_modules
+
+# Local caches / temp
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+*.tmp
+dist
+build
+coverage
+
+# VCS
+.git

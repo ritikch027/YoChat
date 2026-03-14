@@ -1,5 +1,6 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
+  Animated,
   FlatList,
   Modal,
   Pressable,
@@ -7,7 +8,8 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { colors, radius, spacingX, spacingY } from "@/constants/theme";
+import { radius, shadows, spacingX, spacingY } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import Avatar from "./Avatar";
 import Typo from "./Typo";
 
@@ -28,6 +30,22 @@ const ReactionDetailsModal = ({
   onClose: () => void;
   style?: ViewStyle;
 }) => {
+  const theme = useAppTheme();
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!visible) {
+      anim.setValue(0);
+      return;
+    }
+    Animated.spring(anim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 8,
+      tension: 90,
+    }).start();
+  }, [anim, visible]);
+
   const data = useMemo(() => {
     const unique = Array.from(new Set((userIds || []).map((id) => String(id))));
     return unique.map((id) => {
@@ -45,13 +63,44 @@ const ReactionDetailsModal = ({
       <View style={styles.root} pointerEvents="box-none">
         <Pressable style={styles.backdrop} onPress={onClose} />
 
-        <View style={[styles.card, style]}>
-          <View style={styles.header}>
-            <Typo size={16} fontWeight={"800"} color={colors.neutral900}>
+        <Animated.View
+          style={[
+            styles.card,
+            style,
+            {
+              backgroundColor: theme.colors.surfaceCard,
+              borderColor: theme.colors.surfaceBorder,
+              transform: [
+                {
+                  scale: anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.98, 1],
+                  }),
+                },
+              ],
+              opacity: anim,
+              shadowOpacity: theme.scheme === "dark" ? 0.32 : 0.16,
+            },
+          ]}
+        >
+          <View
+            style={[
+              styles.header,
+              { borderBottomColor: theme.scheme === "dark" ? "rgba(255,255,255,0.06)" : "rgba(0,0,0,0.06)" },
+            ]}
+          >
+            <Typo variant="body" style={{ fontWeight: "800" }}>
               {emoji} Reactions
             </Typo>
-            <Pressable onPress={onClose} style={styles.closeBtn} hitSlop={10}>
-              <Typo size={18} fontWeight={"800"} color={colors.neutral700}>
+            <Pressable
+              onPress={onClose}
+              style={({ pressed }) => [
+                styles.closeBtn,
+                { backgroundColor: theme.colors.surfaceElevated, opacity: pressed ? 0.7 : 1 },
+              ]}
+              hitSlop={10}
+            >
+              <Typo size={18} fontWeight={"900"} color={theme.colors.textSecondary}>
                 ×
               </Typo>
             </Pressable>
@@ -60,26 +109,36 @@ const ReactionDetailsModal = ({
           <FlatList
             data={data}
             keyExtractor={(item) => item.id}
-            ItemSeparatorComponent={() => <View style={styles.sep} />}
+            ItemSeparatorComponent={() => (
+              <View
+                style={[
+                  styles.sep,
+                  {
+                    backgroundColor:
+                      theme.scheme === "dark"
+                        ? "rgba(255,255,255,0.05)"
+                        : "rgba(0,0,0,0.05)",
+                  },
+                ]}
+              />
+            )}
             renderItem={({ item }) => (
               <View style={styles.row}>
                 <Avatar size={36} uri={item.avatar} />
-                <Typo size={14} fontWeight={"600"} color={colors.neutral900}>
+                <Typo variant="body" style={{ fontSize: 14, fontWeight: "600" }}>
                   {item.name}
                 </Typo>
               </View>
             )}
             ListEmptyComponent={
               <View style={{ paddingVertical: spacingY._12 }}>
-                <Typo size={13} color={colors.neutral600}>
-                  No reactions yet.
-                </Typo>
+                <Typo variant="chat_meta">No reactions yet.</Typo>
               </View>
             }
             contentContainerStyle={styles.listContent}
             showsVerticalScrollIndicator={false}
           />
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -97,17 +156,11 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
   },
   card: {
-    backgroundColor: colors.white,
     borderRadius: radius._15,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.08)",
     maxHeight: "70%",
     overflow: "hidden",
-    shadowColor: "#000",
-    shadowOpacity: 0.16,
-    shadowRadius: 14,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 10,
+    ...(shadows.modal as any),
   },
   header: {
     flexDirection: "row",
@@ -116,15 +169,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacingX._15,
     paddingVertical: spacingY._12,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(0,0,0,0.06)",
   },
   closeBtn: {
-    width: 28,
-    height: 28,
+    width: 32,
+    height: 32,
     borderRadius: radius.full,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.neutral100,
   },
   listContent: {
     paddingHorizontal: spacingX._15,
@@ -138,7 +189,5 @@ const styles = StyleSheet.create({
   },
   sep: {
     height: 1,
-    backgroundColor: "rgba(0,0,0,0.05)",
   },
 });
-

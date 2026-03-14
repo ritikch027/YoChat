@@ -1,5 +1,6 @@
-import React, { useMemo } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
 import {
+  Animated,
   Dimensions,
   Modal,
   Pressable,
@@ -7,7 +8,8 @@ import {
   View,
   ViewStyle,
 } from "react-native";
-import { colors, radius, spacingX, spacingY } from "@/constants/theme";
+import { radius, shadows, spacingX, spacingY } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import Typo from "./Typo";
 
 const DEFAULT_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -39,6 +41,22 @@ const ReactionPicker = ({
   onRequestClose: () => void;
   reactions?: string[];
 }) => {
+  const theme = useAppTheme();
+  const anim = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    if (!visible) {
+      anim.setValue(0);
+      return;
+    }
+    Animated.spring(anim, {
+      toValue: 1,
+      useNativeDriver: true,
+      friction: 7,
+      tension: 90,
+    }).start();
+  }, [anim, visible]);
+
   const layout = useMemo(() => {
     if (!anchor) return null;
 
@@ -60,12 +78,11 @@ const ReactionPicker = ({
         ? preferTop
         : clamp(preferBottom, 60, Math.max(60, screenH - pillH - 20));
 
-    return { left, top, pillW, pillH, itemSize } satisfies {
+    return { left, top, pillW, pillH } satisfies {
       left: number;
       top: number;
       pillW: number;
       pillH: number;
-      itemSize: number;
     };
   }, [anchor, isMe, reactions.length]);
 
@@ -91,21 +108,51 @@ const ReactionPicker = ({
       <View style={styles.root} pointerEvents="box-none">
         <Pressable style={styles.backdrop} onPress={onRequestClose} />
 
-        <View style={[styles.picker, pickerStyle]}>
+        <Animated.View
+          style={[
+            styles.picker,
+            pickerStyle,
+            {
+              backgroundColor: theme.colors.surfaceElevated,
+              borderColor: theme.colors.surfaceBorder,
+              transform: [
+                {
+                  scale: anim.interpolate({
+                    inputRange: [0, 1],
+                    outputRange: [0.98, 1],
+                  }),
+                },
+              ],
+              opacity: anim,
+            },
+          ]}
+        >
           {reactions.map((emoji) => {
             const selected = reactedEmojis.includes(emoji);
             return (
               <Pressable
                 key={emoji}
                 onPress={() => onSelect(emoji)}
-                style={[styles.reactionItem, selected && styles.reactionSelected]}
-                android_ripple={{ color: "rgba(0,0,0,0.08)", borderless: true }}
+                style={({ pressed }) => [
+                  styles.reactionItem,
+                  {
+                    backgroundColor: selected ? theme.colors.chipBg : "transparent",
+                    opacity: pressed ? 0.7 : 1,
+                  },
+                ]}
+                android_ripple={{
+                  color:
+                    theme.scheme === "dark"
+                      ? "rgba(255,255,255,0.10)"
+                      : "rgba(0,0,0,0.08)",
+                  borderless: true,
+                }}
               >
                 <Typo size={18}>{emoji}</Typo>
               </Pressable>
             );
           })}
-        </View>
+        </Animated.View>
       </View>
     </Modal>
   );
@@ -127,14 +174,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacingX._10,
     paddingVertical: spacingY._7,
     borderRadius: radius.full,
-    backgroundColor: colors.white,
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.08)",
-    shadowColor: "#000",
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 8,
+    ...(shadows.modal as any),
   },
   reactionItem: {
     width: 36,
@@ -143,8 +184,4 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
   },
-  reactionSelected: {
-    backgroundColor: "rgba(0,0,0,0.06)",
-  },
 });
-

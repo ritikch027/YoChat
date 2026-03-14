@@ -18,8 +18,10 @@ import * as Icons from "phosphor-react-native";
 import ScreenWrapper from "@/components/ScreenWrapper";
 import Typo from "@/components/Typo";
 import { colors, radius, spacingX, spacingY } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { useAuth } from "@/contexts/authContext";
+import { useCall } from "@/contexts/callContext";
 import { verticalScale } from "@/utils/styling";
 import Header from "@/components/Header";
 import BackButton from "@/components/BackButton";
@@ -30,6 +32,7 @@ import * as ImagePicker from "expo-image-picker";
 import { Image } from "expo-image";
 import Loading from "@/components/Loading";
 import { uploadFileToCloudinary } from "@/services/imageService";
+import * as Haptics from "expo-haptics";
 import {
   getMessages,
   newMessage,
@@ -46,6 +49,8 @@ import moment from "moment";
 
 const Conversation = () => {
   const { user: currentUser } = useAuth();
+  const { placeCall } = useCall();
+  const theme = useAppTheme();
   const router = useRouter();
   const {
     id: conversationId,
@@ -469,7 +474,7 @@ const Conversation = () => {
     [],
   );
 
-  const toggleReactionHandler = useCallback((res: ResponseProps) => {
+  function toggleReactionHandler(res: ResponseProps) {
     if (!res?.success || !res?.data) return;
 
     const activeConversationId = conversationIdRef.current;
@@ -495,7 +500,7 @@ const Conversation = () => {
         ),
       };
     });
-  }, []);
+  }
   const typingLabel = (() => {
     const names = Object.values(typingUsers);
     if (names.length === 0) return null;
@@ -589,6 +594,7 @@ const Conversation = () => {
   const onSend = async () => {
     if (!message.trim() && !selectedFile) return;
     if (!currentUser) return;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light).catch(() => {});
     setLoading(true);
 
     try {
@@ -760,6 +766,28 @@ const Conversation = () => {
     return (item as TypingListItem).kind === "typing";
   };
 
+  const onStartCall = useCallback(
+    (mediaType: "audio" | "video") => {
+      const cid = conversationId ? String(conversationId) : "";
+      if (!cid || !otherUserId) return;
+
+      placeCall({
+        conversationId: cid,
+        targetUserId: otherUserId,
+        targetUserName: conversationName,
+        targetUserAvatar: conversationAvatar ? String(conversationAvatar) : null,
+        mediaType,
+      });
+    },
+    [
+      conversationAvatar,
+      conversationId,
+      conversationName,
+      otherUserId,
+      placeCall,
+    ],
+  );
+
   return (
     <ScreenWrapper showPattern={true} bgOpacity={0.5}>
       <KeyboardAvoidingView
@@ -783,7 +811,14 @@ const Conversation = () => {
                     uri={conversationAvatar as string}
                     isGroup={String(type) === "group"}
                   />
-                  {isOtherOnline && <View style={styles.onlineDot} />}
+                  {isOtherOnline && (
+                    <View
+                      style={[
+                        styles.onlineDot,
+                        { borderColor: theme.colors.surfaceBg },
+                      ]}
+                    />
+                  )}
                 </View>
                 <View style={{ flex: 1 }}>
                   <Typo
@@ -806,20 +841,40 @@ const Conversation = () => {
             </View>
           }
           rightIcon={
-            <TouchableOpacity
-              activeOpacity={0.7}
-              style={{ marginBottom: verticalScale(7) }}
-            >
-              <Icons.DotsThreeOutlineVerticalIcon
-                weight="fill"
-                color={colors.white}
-              />
-            </TouchableOpacity>
+            <View style={styles.headerActions}>
+              {isDirect ? (
+                <>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={styles.headerActionBtn}
+                    onPress={() => onStartCall("audio")}
+                  >
+                    <Icons.PhoneCallIcon weight="fill" color={colors.white} />
+                  </TouchableOpacity>
+                  <TouchableOpacity
+                    activeOpacity={0.7}
+                    style={styles.headerActionBtn}
+                    onPress={() => onStartCall("video")}
+                  >
+                    <Icons.VideoCameraIcon weight="fill" color={colors.white} />
+                  </TouchableOpacity>
+                </>
+              ) : null}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={styles.headerActionBtn}
+              >
+                <Icons.DotsThreeOutlineVerticalIcon
+                  weight="fill"
+                  color={colors.white}
+                />
+              </TouchableOpacity>
+            </View>
           }
         />
 
         {/* messages */}
-        <View style={styles.content}>
+        <View style={[styles.content, { backgroundColor: theme.colors.surfaceCard }]}>
           {loadingMessages && messageState.items.length === 0 ? (
             <MessagesSkeleton />
           ) : (
@@ -880,15 +935,28 @@ const Conversation = () => {
 
           <View style={styles.footer}>
             {replyDraft && (
-              <View style={styles.replyBar}>
-                <View style={styles.replyAccent} />
+              <View
+                style={[
+                  styles.replyBar,
+                  {
+                    backgroundColor: theme.colors.surfaceElevated,
+                    borderColor: theme.colors.surfaceBorder,
+                  },
+                ]}
+              >
+                <View
+                  style={[
+                    styles.replyAccent,
+                    { backgroundColor: theme.colors.primaryDark },
+                  ]}
+                />
                 <View style={{ flex: 1 }}>
-                  <Typo size={12} fontWeight={"700"} color={colors.neutral800}>
+                  <Typo size={12} fontWeight={"700"} color={theme.colors.textPrimary}>
                     Replying to {replyDraft.senderName}
                   </Typo>
                   <Typo
-                    size={12}
-                    color={colors.neutral600}
+                    variant="chat_meta"
+                    style={{ color: theme.colors.textSecondary }}
                     textProps={{ numberOfLines: 1 }}
                   >
                     {replyDraft.attachment
@@ -899,12 +967,12 @@ const Conversation = () => {
                 <TouchableOpacity
                   activeOpacity={0.7}
                   onPress={() => setReplyDraft(null)}
-                  style={styles.replyClose}
+                  style={[styles.replyClose, { backgroundColor: theme.colors.chipBg }]}
                 >
                   <Icons.XIcon
                     size={14}
                     weight="bold"
-                    color={colors.neutral700}
+                    color={theme.colors.textSecondary}
                   />
                 </TouchableOpacity>
               </View>
@@ -914,7 +982,6 @@ const Conversation = () => {
               onChangeText={onChangeMessage}
               containerStyle={{
                 paddingLeft: spacingX._10,
-                borderWidth: 0,
               }}
               placeholder="Type Message"
               icon={
@@ -926,7 +993,7 @@ const Conversation = () => {
                   <Icons.PlusIcon
                     size={verticalScale(22)}
                     weight="bold"
-                    color={colors.black}
+                    color={theme.colors.icon}
                   />
                   {selectedFile && selectedFile.uri && (
                     <Image
@@ -937,19 +1004,19 @@ const Conversation = () => {
                 </TouchableOpacity>
               }
               rightIcon={
-                <View style={styles.sendWrap}>
+                <View style={[styles.sendWrap, { borderLeftColor: theme.colors.surfaceBorder }]}>
                   <TouchableOpacity
                     style={styles.inputIcon}
                     onPress={onSend}
                     activeOpacity={0.6}
                   >
                     {loading ? (
-                      <Loading size="small" color={colors.black} />
+                      <Loading size="small" color={theme.colors.icon} />
                     ) : (
                       <Icons.PaperPlaneTiltIcon
                         size={verticalScale(22)}
                         weight="fill"
-                        color={colors.black}
+                        color={theme.colors.icon}
                       />
                     )}
                   </TouchableOpacity>
@@ -977,6 +1044,15 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: spacingX._12,
   },
+  headerActions: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacingX._10,
+    marginBottom: verticalScale(7),
+  },
+  headerActionBtn: {
+    padding: 4,
+  },
   headerDetailsTap: {
     flex: 1,
     flexDirection: "row",
@@ -993,12 +1069,12 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     backgroundColor: "#22C55E",
     borderWidth: 2,
-    borderColor: colors.neutral900,
+    borderColor: "transparent",
   },
   sendWrap: {
     paddingLeft: spacingX._12,
     borderLeftWidth: 1.5,
-    borderLeftColor: colors.neutral300,
+    borderLeftColor: "transparent",
   },
   selectedFile: {
     position: "absolute",
@@ -1032,14 +1108,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacingX._12,
     paddingVertical: spacingY._10,
     borderRadius: radius._15,
-    backgroundColor: colors.neutral100,
+    borderWidth: 1,
     marginBottom: spacingY._7,
   },
   replyAccent: {
     width: 3,
     height: "100%",
     borderRadius: radius.full,
-    backgroundColor: colors.primaryDark,
   },
   replyClose: {
     height: 28,
@@ -1047,22 +1122,21 @@ const styles = StyleSheet.create({
     borderRadius: radius.full,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: colors.neutral200,
   },
   messagesContainer: {
     flex: 1,
   },
   messagesContent: {
-    paddingTop: spacingY._20,
-    paddingBottom: spacingY._10,
-    gap: spacingY._12,
+    paddingTop: spacingY._15,
+    paddingBottom: spacingY._12,
+    gap: spacingY._10,
   },
   skeletonWrap: {
     flex: 1,
     justifyContent: "flex-end",
-    paddingTop: spacingY._20,
-    paddingBottom: spacingY._10,
-    gap: spacingY._12,
+    paddingTop: spacingY._15,
+    paddingBottom: spacingY._12,
+    gap: spacingY._10,
   },
   skeletonRow: {
     flexDirection: "row",

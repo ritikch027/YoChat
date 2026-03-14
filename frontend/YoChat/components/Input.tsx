@@ -1,4 +1,5 @@
-import { colors, radius, spacingX } from "@/constants/theme";
+import { radius, spacingX } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { InputProps } from "@/types";
 import { verticalScale } from "@/utils/styling";
 import React, { useState } from "react";
@@ -6,18 +7,20 @@ import { StyleSheet, TextInput, View } from "react-native";
 
 const Input = (props: InputProps) => {
   const [isFocused, setIsFocused] = useState(false);
+  const theme = useAppTheme();
   return (
     <View
       style={[
         styles.container,
         props.containerStyle && props.containerStyle,
-        isFocused && styles.primaryBorder,
+        isFocused && { borderColor: theme.colors.primary },
+        { backgroundColor: theme.colors.surfaceElevated, borderColor: theme.colors.surfaceBorder },
       ]}
     >
       {props.icon && props.icon}
       <TextInput
-        style={[styles.input, props.inputStyle]}
-        placeholderTextColor={colors.neutral400}
+        style={[styles.input, { color: theme.colors.textPrimary }, props.inputStyle]}
+        placeholderTextColor={theme.scheme === "dark" ? "rgba(245,245,244,0.45)" : "rgba(87,83,78,0.6)"}
         ref={props.inputRef && props.inputRef}
         onFocus={() => setIsFocused(true)}
         onBlur={() => setIsFocused(false)}
@@ -37,20 +40,14 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: colors.neutral200,
     borderRadius: radius.full,
     paddingRight: spacingX._20,
     borderCurve: "continuous",
     paddingHorizontal: spacingX._15,
-    backgroundColor: colors.neutral100,
     gap: spacingX._10,
-  },
-  primaryBorder: {
-    borderColor: colors.primary,
   },
   input: {
     flex: 1,
-    color: colors.text,
     fontSize: verticalScale(16),
     fontWeight: "400",
   },

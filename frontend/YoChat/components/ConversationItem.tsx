@@ -1,22 +1,16 @@
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
 import React from "react";
-import { colors, spacingX, spacingY } from "@/constants/theme";
+import { Pressable, StyleSheet, View } from "react-native";
+import moment from "moment";
+import { spacingX, spacingY } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import Avatar from "./Avatar";
 import Typo from "./Typo";
-import moment from "moment";
-import {
-  ConversationListItemProps,
-  ConversationProps,
-  MessageProps,
-} from "@/types";
+import { ConversationListItemProps } from "@/types";
 import { useAuth } from "@/contexts/authContext";
 
-const ConversationItem = ({
-  item,
-  showDivider,
-  router,
-}: ConversationListItemProps) => {
+const ConversationItem = ({ item, showDivider, router }: ConversationListItemProps) => {
   const { user: currentUser } = useAuth();
+  const theme = useAppTheme();
 
   const lastMessage: any = item.lastMessage;
   const isDirect = item.type == "direct";
@@ -24,25 +18,21 @@ const ConversationItem = ({
   const otherParticipant = isDirect
     ? item.participants.find((p) => p._id != currentUser?.id)
     : null;
+
   if (otherParticipant && isDirect) avatar = otherParticipant?.avatar;
+
   const getLastMessageDate = () => {
     if (!lastMessage?.createdAt) return null;
     const messageDate = moment(lastMessage?.createdAt);
     const today = moment();
 
-    if (messageDate.isSame(today, "day")) {
-      return messageDate.format("h:mm A");
-    }
-    if (messageDate.isSame(today, "year")) {
-      return messageDate.format("MMM D");
-    }
-
-    return messageDate.format("MMM D,YYYY");
+    if (messageDate.isSame(today, "day")) return messageDate.format("h:mm A");
+    if (messageDate.isSame(today, "year")) return messageDate.format("MMM D");
+    return messageDate.format("MMM D, YYYY");
   };
 
   const getLastMessageContent = () => {
-    if (!lastMessage) return "Say Hii 👋";
-
+    if (!lastMessage) return "Say hi 👋";
     return lastMessage?.attachment ? "Image" : lastMessage.content;
   };
 
@@ -59,42 +49,62 @@ const ConversationItem = ({
     });
   };
 
- const openAvatar = () => {
+  const openAvatar = () => {
     if (!avatar) return;
     router.push({
       pathname: "/(modals)/attachment",
       params: { uri: String(avatar) },
     });
-  }; 
+  };
 
   return (
     <View>
-      <TouchableOpacity
-        activeOpacity={0.8}
-        style={styles.conversationItem}
+      <Pressable
         onPress={openConversation}
+        style={({ pressed }) => [
+          styles.conversationItem,
+          { opacity: pressed ? 0.7 : 1 },
+        ]}
       >
-        <TouchableOpacity activeOpacity={0.85} onPress={openAvatar}>
+        <Pressable
+          onPress={openAvatar}
+          style={({ pressed }) => ({ opacity: pressed ? 0.85 : 1 })}
+          hitSlop={8}
+        >
           <Avatar uri={avatar} size={47} isGroup={item.type == "group"} />
-        </TouchableOpacity>
+        </Pressable>
+
         <View style={{ flex: 1 }}>
           <View style={styles.row}>
-            <Typo size={17} fontWeight={"500"}>
+            <Typo variant="body" style={{ fontSize: 17, fontWeight: "600" }}>
               {isDirect ? otherParticipant?.name : item?.name}
             </Typo>
-            {item.lastMessage && <Typo size={14}>{getLastMessageDate()}</Typo>}
+            {item.lastMessage && <Typo variant="chat_meta">{getLastMessageDate()}</Typo>}
           </View>
 
           <Typo
             textProps={{ numberOfLines: 1 }}
-            size={14}
-            color={colors.neutral600}
+            variant="chat_meta"
+            style={{ color: theme.colors.textSecondary }}
           >
             {getLastMessageContent()}
           </Typo>
         </View>
-      </TouchableOpacity>
-      {showDivider && <View style={styles.divider} />}
+      </Pressable>
+
+      {showDivider && (
+        <View
+          style={[
+            styles.divider,
+            {
+              backgroundColor:
+                theme.scheme === "dark"
+                  ? "rgba(255,255,255,0.06)"
+                  : "rgba(0,0,0,0.07)",
+            },
+          ]}
+        />
+      )}
     </View>
   );
 };
@@ -117,6 +127,6 @@ const styles = StyleSheet.create({
     height: 1,
     width: "95%",
     alignSelf: "center",
-    backgroundColor: "rgba(0,0,0,0.07)",
   },
 });
+

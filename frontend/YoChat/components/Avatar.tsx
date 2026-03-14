@@ -1,13 +1,15 @@
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Pressable, StyleSheet } from "react-native";
 import React from "react";
 import { AvatarProps } from "@/types";
 import { verticalScale } from "@/utils/styling";
-import { colors, radius } from "@/constants/theme";
+import { radius } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { Image } from "expo-image";
 import { getAvatarPath } from "@/services/imageService";
 import { useRouter } from "expo-router";
 const Avatar = ({ uri, size = 40, style, isGroup = false }: AvatarProps) => {
   const router = useRouter();
+  const theme = useAppTheme();
   const openAvatar = () => {
     if (!uri) return;
     router.push({
@@ -16,11 +18,14 @@ const Avatar = ({ uri, size = 40, style, isGroup = false }: AvatarProps) => {
     });
   };
   return (
-    <TouchableOpacity
-      activeOpacity={1}
+    <Pressable
       onPress={openAvatar}
       style={[
         styles.avatar,
+        {
+          backgroundColor: theme.colors.chipBg,
+          borderColor: theme.colors.surfaceBorder,
+        },
         { height: verticalScale(size), width: verticalScale(size) },
         style,
       ]}
@@ -31,7 +36,7 @@ const Avatar = ({ uri, size = 40, style, isGroup = false }: AvatarProps) => {
         contentFit="cover"
         transition={100}
       />
-    </TouchableOpacity>
+    </Pressable>
   );
 };
 
@@ -40,12 +45,10 @@ export default Avatar;
 const styles = StyleSheet.create({
   avatar: {
     alignSelf: "center",
-    backgroundColor: colors.neutral200,
     height: verticalScale(47),
     width: verticalScale(47),
     borderRadius: radius.full,
     borderWidth: 1,
-    borderColor: colors.neutral100,
     overflow: "hidden",
   },
 });

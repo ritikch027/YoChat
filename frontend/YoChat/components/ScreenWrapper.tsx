@@ -1,4 +1,3 @@
-import { colors } from "@/constants/theme";
 import { ScreenWrapperProps } from "@/types";
 import React from "react";
 import {
@@ -9,6 +8,7 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import { useAppTheme } from "@/hooks/useAppTheme";
 const { height } = Dimensions.get("window");
 
 const ScreenWrapper = ({
@@ -18,6 +18,7 @@ const ScreenWrapper = ({
   isModal = false,
   bgOpacity = 1,
 }: ScreenWrapperProps) => {
+  const theme = useAppTheme();
   let paddingTop = Platform.OS === "ios" ? height * 0.06 : 40;
   let paddingBottom = 0;
 
@@ -29,13 +30,18 @@ const ScreenWrapper = ({
     <ImageBackground
       style={{
         flex: 1,
-        backgroundColor: isModal ? colors.white : colors.neutral900,
+        backgroundColor: isModal
+          ? theme.colors.surfaceCard
+          : theme.colors.surfaceBg,
       }}
       imageStyle={{ opacity: showPattern ? bgOpacity : 0 }}
       source={require("../assets/images/bgPattern.png")}
     >
       <View style={[{ paddingTop, paddingBottom, flex: 1 }, style]}>
-        <StatusBar barStyle={"light-content"} backgroundColor={"transparent"} />
+        <StatusBar
+          barStyle={theme.scheme === "dark" ? "light-content" : "dark-content"}
+          backgroundColor={"transparent"}
+        />
         {children}
       </View>
     </ImageBackground>

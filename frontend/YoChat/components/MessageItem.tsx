@@ -9,7 +9,8 @@ import {
 import React, { useMemo, useRef, useState } from "react";
 import { MessageProps } from "@/types";
 import { useAuth } from "@/contexts/authContext";
-import { colors, radius, spacingX, spacingY } from "@/constants/theme";
+import { radius, spacingX, spacingY } from "@/constants/theme";
+import { useAppTheme } from "@/hooks/useAppTheme";
 import { scale, verticalScale } from "@/utils/styling";
 import Avatar from "./Avatar";
 import Typo from "./Typo";
@@ -19,6 +20,7 @@ import { useRouter } from "expo-router";
 import * as Icons from "phosphor-react-native";
 import ReactionPicker, { ReactionPickerAnchor } from "./ReactionPicker";
 import ReactionDetailsModal from "./ReactionDetailsModal";
+import * as Haptics from "expo-haptics";
 
 const MessageItem = ({
   item,
@@ -36,6 +38,7 @@ const MessageItem = ({
   reactionUsersById?: Record<string, { name: string; avatar: string | null }>;
 }) => {
   const { user: currentUser } = useAuth();
+  const theme = useAppTheme();
   const router = useRouter();
   const isMe = currentUser?.id === item?.sender?.id;
   const bubbleRef = useRef<View>(null);
@@ -188,59 +191,64 @@ const MessageItem = ({
             />
           )}
 
-          <Pressable
-            ref={bubbleRef}
-            delayLongPress={250}
-            onLongPress={openReactionPicker}
-            style={[
-              styles.messageBubble,
-              isMe ? styles.myBubble : styles.theirBubble,
-              reactionsSummary.length > 0 && styles.bubbleWithReactions,
-            ]}
-          >
-            {!isMe && !isDirect && (
-              <Typo color={colors.neutral900} size={13} fontWeight={"600"}>
-                {item.sender.name}
-              </Typo>
-            )}
+          <View style={styles.bubbleColumn}>
+            <Pressable
+              ref={bubbleRef}
+              delayLongPress={250}
+              onLongPress={openReactionPicker}
+              style={[
+                styles.messageBubble,
+                { backgroundColor: isMe ? theme.colors.bubbleMe : theme.colors.bubbleOther },
+              ]}
+            >
+              {!isMe && !isDirect && (
+                <Typo size={13} fontWeight={"600"} color={theme.colors.textPrimary}>
+                  {item.sender.name}
+                </Typo>
+              )}
 
-            {item.replySnapshot && (
-              <TouchableOpacity
-                activeOpacity={0.85}
-                disabled={!onPressReplyQuote || !item.replySnapshot?.id}
-                onPress={() => {
-                  const id = item.replySnapshot?.id
-                    ? String(item.replySnapshot.id)
-                    : "";
-                  if (!id) return;
-                  onPressReplyQuote?.(id);
-                }}
-                style={styles.replyQuote}
-              >
-                <View style={styles.replyQuoteAccent} />
-                <View style={{ flex: 1 }}>
-                  <Typo size={12} fontWeight={"700"} color={colors.neutral800}>
-                    {item.replySnapshot.senderName || "User"}
-                  </Typo>
-                  <Typo
-                    size={12}
-                    color={colors.neutral600}
-                    textProps={{ numberOfLines: 1 }}
-                  >
-                    {item.replySnapshot.attachment
-                      ? "Image"
-                      : item.replySnapshot.content || "Message"}
-                  </Typo>
-                </View>
-                {!!onPressReplyQuote && (
-                  <Icons.CaretRightIcon
-                    size={16}
-                    weight="bold"
-                    color={colors.neutral500}
+              {item.replySnapshot && (
+                <TouchableOpacity
+                  activeOpacity={0.85}
+                  disabled={!onPressReplyQuote || !item.replySnapshot?.id}
+                  onPress={() => {
+                    const id = item.replySnapshot?.id
+                      ? String(item.replySnapshot.id)
+                      : "";
+                    if (!id) return;
+                    onPressReplyQuote?.(id);
+                  }}
+                  style={[styles.replyQuote, { backgroundColor: theme.colors.chipBg }]}
+                >
+                  <View
+                    style={[
+                      styles.replyQuoteAccent,
+                      { backgroundColor: theme.colors.primaryDark },
+                    ]}
                   />
-                )}
-              </TouchableOpacity>
-            )}
+                  <View style={{ flex: 1 }}>
+                    <Typo size={12} fontWeight={"700"} color={theme.colors.textPrimary}>
+                      {item.replySnapshot.senderName || "User"}
+                    </Typo>
+                    <Typo
+                      variant="chat_meta"
+                      textProps={{ numberOfLines: 1 }}
+                      style={{ color: theme.colors.textSecondary }}
+                    >
+                      {item.replySnapshot.attachment
+                        ? "Image"
+                        : item.replySnapshot.content || "Message"}
+                    </Typo>
+                  </View>
+                  {!!onPressReplyQuote && (
+                    <Icons.CaretRightIcon
+                      size={16}
+                      weight="bold"
+                      color={theme.colors.textSecondary}
+                    />
+                  )}
+                </TouchableOpacity>
+              )}
 
             {item.attachment && (
               <TouchableOpacity
@@ -275,45 +283,59 @@ const MessageItem = ({
                 />
               </TouchableOpacity>
             )}
-            {item.content && <Typo size={14}>{item.content}</Typo>}
-
-            <Typo
-              style={{ alignSelf: "flex-end" }}
-              size={11}
-              fontWeight={"500"}
-              color={colors.neutral600}
-            >
-              {formattedDate}
-            </Typo>
+            {item.content && (
+              <Typo variant="chat_message" style={{ color: theme.colors.textPrimary }}>
+                {item.content}
+              </Typo>
+            )}
 
             {reactionsSummary.length > 0 && (
               <View
-                pointerEvents="box-none"
-                style={styles.reactionsOverlay}
+                style={[
+                  styles.reactionsRow,
+                  { alignSelf: isMe ? "flex-end" : "flex-start" },
+                ]}
               >
-                <View style={styles.reactionsOverlayInner}>
-                  {reactionsSummary.map((r) => (
-                    <Pressable
-                      key={r.emoji}
-                      hitSlop={6}
-                      disabled={isDirect}
-                      onPress={() => openReactionDetails(r.emoji)}
-                      style={[
-                        styles.reactionChip,
-                        r.reactedByMe && styles.reactionChipMine,
-                        isDirect && styles.reactionPillDisabled,
-                      ]}
+                {reactionsSummary.map((r) => (
+                  <Pressable
+                    key={r.emoji}
+                    hitSlop={6}
+                    disabled={isDirect}
+                    onPress={() => openReactionDetails(r.emoji)}
+                    style={({ pressed }) => [
+                      styles.reactionPill,
+                      {
+                        backgroundColor: r.reactedByMe
+                          ? theme.colors.chipBgMine
+                          : theme.colors.chipBg,
+                        opacity: pressed ? 0.7 : 1,
+                      },
+                      isDirect && styles.reactionPillDisabled,
+                    ]}
+                  >
+                    <Typo size={12}>{r.emoji}</Typo>
+                    <Typo
+                      variant="chat_meta"
+                      style={{ color: theme.colors.textSecondary, fontWeight: "800" }}
                     >
-                      <Typo size={12}>{r.emoji}</Typo>
-                      <Typo size={11} color={colors.neutral700} fontWeight={"700"}>
-                        {r.count}
-                      </Typo>
-                    </Pressable>
-                  ))}
-                </View>
+                      {r.count}
+                    </Typo>
+                  </Pressable>
+                ))}
               </View>
             )}
-          </Pressable>
+            </Pressable>
+
+            <Typo
+              variant="chat_meta"
+              style={[
+                styles.timestamp,
+                { alignSelf: isMe ? "flex-end" : "flex-start" },
+              ]}
+            >
+              {formattedDate}
+            </Typo>
+          </View>
         </View>
       </Animated.View>
 
@@ -324,6 +346,7 @@ const MessageItem = ({
         reactedEmojis={reactedEmojisByMe}
         onRequestClose={() => setReactionPickerVisible(false)}
         onSelect={(emoji) => {
+          Haptics.selectionAsync().catch(() => {});
           onToggleReaction?.(String(item.id), emoji);
           setReactionPickerVisible(false);
         }}
@@ -351,6 +374,10 @@ const styles = StyleSheet.create({
     gap: spacingX._7,
     maxWidth: "80%",
   },
+  bubbleColumn: {
+    flexShrink: 1,
+    gap: spacingY._5,
+  },
   messageWithReactions: {
     marginBottom: spacingY._12,
   },
@@ -365,53 +392,33 @@ const styles = StyleSheet.create({
   },
   attachment: {
     borderRadius: radius._10,
-    backgroundColor: colors.neutral200,
+    backgroundColor: "rgba(0,0,0,0.06)",
   },
   messageBubble: {
-    padding: spacingX._10,
-    borderRadius: radius._15,
-    gap: spacingY._5,
+    paddingHorizontal: spacingX._12,
+    paddingVertical: spacingY._7,
+    borderRadius: radius._20,
+    gap: spacingY._7,
   },
-  bubbleWithReactions: {
-    paddingBottom: spacingY._12,
+  timestamp: {
+    paddingHorizontal: spacingX._7,
   },
-  reactionPillDisabled: {
-    opacity: 0.85,
-  },
-  reactionsOverlay: {
-    position: "absolute",
-    bottom: -verticalScale(14),
-    zIndex: 10,
-    left: spacingX._7,
-  },
-  reactionsOverlayInner: {
+  reactionsRow: {
     flexDirection: "row",
     flexWrap: "wrap",
-    alignItems: "center",
     gap: spacingX._7,
-    paddingHorizontal: spacingX._5,
-    paddingVertical: spacingY._5,
-    borderRadius: radius.full,
-    backgroundColor: colors.white,
-    borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.08)",
-    shadowColor: "#000",
-    shadowOpacity: 0.12,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
-    elevation: 6,
+    marginTop: spacingY._5,
   },
-  reactionChip: {
+  reactionPill: {
     flexDirection: "row",
     alignItems: "center",
     gap: spacingX._3,
     paddingHorizontal: spacingX._7,
     paddingVertical: spacingY._5,
     borderRadius: radius.full,
-    backgroundColor: colors.neutral100,
   },
-  reactionChipMine: {
-    backgroundColor: colors.neutral200,
+  reactionPillDisabled: {
+    opacity: 0.85,
   },
   replyQuote: {
     flexDirection: "row",
@@ -420,17 +427,9 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacingX._7,
     minWidth: scale(140),
     borderRadius: radius._10,
-    backgroundColor: "rgba(0,0,0,0.06)",
   },
   replyQuoteAccent: {
     width: 3,
     borderRadius: radius.full,
-    backgroundColor: colors.primaryDark,
-  },
-  myBubble: {
-    backgroundColor: colors.myBubble,
-  },
-  theirBubble: {
-    backgroundColor: colors.otherBubble,
   },
 });

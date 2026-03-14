@@ -5,6 +5,7 @@ import Conversation from "../models/Conversation.js";
 import { registerUserEvents } from "./controllers/user.controller.js";
 import { registerConversationEvents } from "./controllers/conversation.controller.js";
 import { registerMessageEvents } from "./controllers/message.controller.js";
+import { registerCallEvents } from "./controllers/call.controller.js";
 import {
   registerPresenceOnConnect,
   registerPresenceOnDisconnect,
@@ -48,11 +49,13 @@ export function initializeSocket(server) {
     const userId = socket.data.userId;
 
     console.log(`user connected: ${userId},username:${socket.data.name}`);
+    socket.join(`user:${String(userId)}`);
 
     registerPresenceOnConnect(io, socket);
     registerUserEvents(io, socket);
     registerConversationEvents(io, socket);
     registerMessageEvents(io, socket);
+    registerCallEvents(io, socket);
 
     //join all the conversations the user is part of
     try {

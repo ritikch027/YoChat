@@ -1,7 +1,8 @@
-import { StyleSheet, Text, View } from "react-native";
+import { StyleSheet, View } from "react-native";
 import React from "react";
 import { HeaderProps } from "@/types";
 import Typo from "./Typo";
+import { spacingX, spacingY } from "@/constants/theme";
 
 const Header = ({ title = "", leftIcon, rightIcon, style }: HeaderProps) => {
   return (
@@ -9,7 +10,7 @@ const Header = ({ title = "", leftIcon, rightIcon, style }: HeaderProps) => {
       {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}
 
       {title && (
-        <Typo size={22} fontWeight={"600"} style={styles.title}>
+        <Typo variant="title" style={styles.title}>
           {title}
         </Typo>
       )}
@@ -26,12 +27,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between",
+    minHeight: 56,
+    paddingHorizontal: spacingX._15,
+    paddingVertical: spacingY._7,
   },
   title: {
     position: "absolute",
     width: "100%",
     textAlign: "center",
     zIndex: 10,
+    paddingHorizontal: spacingX._40,
   },
   leftIcon: {
     alignSelf: "flex-start",
